@@ -50,6 +50,47 @@
         .main-content {
             padding: 25px 20px;
         }
+
+        /* NEW: Customer ID Input Section */
+        .customer-id-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 1px solid #e8eaed;
+        }
+        
+        .customer-id-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #5f6368;
+            font-size: 14px;
+        }
+        
+        .customer-id-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .customer-id-input:focus {
+            outline: none;
+            border-color: #4285f4;
+            box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+        }
+        
+        .customer-id-help {
+            font-size: 12px;
+            color: #5f6368;
+            margin-top: 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
         
         .option-buttons {
             display: flex;
@@ -233,6 +274,33 @@
             border: 1px solid #eee;
             box-shadow: 0 3px 10px rgba(0,0,0,0.08);
         }
+
+        /* NEW: PDF Link Styling */
+        .pdf-link {
+            display: inline-block;
+            padding: 15px 20px;
+            background: #4285f4;
+            color: white;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .pdf-link:hover {
+            background: #3367d6;
+        }
+
+        /* NEW: Processing Info */
+        .processing-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #5f6368;
+        }
         
         .new-verification {
             background: #f1f3f4;
@@ -312,6 +380,24 @@
         </header>
         
         <div class="main-content">
+            <!-- NEW: Customer ID Input Section -->
+            <div class="customer-id-container">
+                <label for="customer-id-input">Customer ID (Optional)</label>
+                <input 
+                    type="text" 
+                    id="customer-id-input" 
+                    class="customer-id-input"
+                    placeholder="Enter customer ID (e.g., 96600001)"
+                    maxlength="20"
+                >
+                <div class="customer-id-help">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                    Leave empty to auto-detect from image
+                </div>
+            </div>
+
             <div class="option-buttons">
                 <button id="camera-btn" class="btn btn-primary">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -373,202 +459,11 @@
                         <img id="detected-stamp" class="stamp-img">
                     </div>
                     <div class="stamp-box">
-                        <h3>Database Stamp</h3>
+                        <h3>Database Signature</h3>
                         <img id="database-stamp" class="stamp-img">
+                        <!-- PDF link will be added here dynamically -->
                     </div>
                 </div>
-                
-                <button id="new-verification" class="new-verification">Verify Another Invoice</button>
-            </div>
-            
-            <div id="error-message" class="error-message">
-                <p id="error-text"></p>
-            </div>
-        </div>
-    </div>
 
-    <script>
-        // DOM Elements
-        const cameraBtn = document.getElementById('camera-btn');
-        const uploadBtn = document.getElementById('upload-btn');
-        const cameraContainer = document.getElementById('camera-container');
-        const uploadContainer = document.getElementById('upload-container');
-        const video = document.getElementById('video');
-        const captureBtn = document.getElementById('capture-btn');
-        const cancelCameraBtn = document.getElementById('cancel-camera');
-        const uploadBox = document.getElementById('upload-box');
-        const fileInput = document.getElementById('file-input');
-        const uploadTrigger = document.getElementById('upload-trigger');
-        const cancelUploadBtn = document.getElementById('cancel-upload');
-        const loading = document.getElementById('loading');
-        const resultsContainer = document.getElementById('results-container');
-        const statusText = document.getElementById('status-text');
-        const customerIdValue = document.getElementById('customer-id-value');
-        const detectedStamp = document.getElementById('detected-stamp');
-        const databaseStamp = document.getElementById('database-stamp');
-        const newVerificationBtn = document.getElementById('new-verification');
-        const errorMessage = document.getElementById('error-message');
-        const errorText = document.getElementById('error-text');
-        
-        // State variables
-        let stream = null;
-        
-        // Event Listeners
-        cameraBtn.addEventListener('click', startCamera);
-        uploadBtn.addEventListener('click', showUpload);
-        captureBtn.addEventListener('click', capturePhoto);
-        cancelCameraBtn.addEventListener('click', resetUI);
-        uploadTrigger.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', handleFileUpload);
-        cancelUploadBtn.addEventListener('click', resetUI);
-        newVerificationBtn.addEventListener('click', resetUI);
-        
-        // Highlight upload box when file is dragged over
-        uploadBox.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadBox.classList.add('active');
-        });
-        
-        uploadBox.addEventListener('dragleave', () => {
-            uploadBox.classList.remove('active');
-        });
-        
-        uploadBox.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadBox.classList.remove('active');
-            
-            if (e.dataTransfer.files.length) {
-                fileInput.files = e.dataTransfer.files;
-                handleFileUpload();
-            }
-        });
-        
-        // Functions
-        function startCamera() {
-            // Hide buttons and show camera
-            document.querySelector('.option-buttons').style.display = 'none';
-            cameraContainer.style.display = 'block';
-            
-            // Access phone camera
-            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    } 
-                })
-                .then(mediaStream => {
-                    stream = mediaStream;
-                    video.srcObject = stream;
-                    video.play();
-                })
-                .catch(err => {
-                    showError('Camera access error: ' + err.message);
-                    resetUI();
-                });
-            } else {
-                showError('Camera not supported on this device');
-                resetUI();
-            }
-        }
-        
-        function showUpload() {
-            document.querySelector('.option-buttons').style.display = 'none';
-            uploadContainer.style.display = 'block';
-        }
-        
-        function capturePhoto() {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            
-            // Stop camera stream
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            
-            processImage(canvas.toDataURL('image/jpeg'));
-        }
-        
-        function handleFileUpload() {
-            if (fileInput.files && fileInput.files[0]) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    processImage(e.target.result);
-                };
-                reader.readAsDataURL(fileInput.files[0]);
-            }
-        }
-        
-        function processImage(imageData) {
-            // Hide UI and show loading
-            cameraContainer.style.display = 'none';
-            uploadContainer.style.display = 'none';
-            loading.style.display = 'block';
-            errorMessage.style.display = 'none';
-            
-            // Send to backend (replace with your actual endpoint)
-            const backendUrl = 'YOUR_BACKEND_ENDPOINT_URL';
-            
-            fetch(backendUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: imageData })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.error) {
-                    throw new Error(result.error);
-                }
-                
-                // Display results
-                loading.style.display = 'none';
-                resultsContainer.style.display = 'block';
-                
-                customerIdValue.textContent = result.customer_id || 'Not found';
-                detectedStamp.src = result.extracted_stamp || '';
-                databaseStamp.src = result.database_stamp || '';
-                
-                if (result.match) {
-                    statusText.textContent = '✅ VALID STAMP';
-                    statusText.className = 'status-text status-valid';
-                } else {
-                    statusText.textContent = '❌ INVALID STAMP';
-                    statusText.className = 'status-text status-invalid';
-                }
-            })
-            .catch(error => {
-                loading.style.display = 'none';
-                showError(error.message || 'Processing failed. Please try again.');
-            });
-        }
-        
-        function resetUI() {
-            // Stop camera if active
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                stream = null;
-            }
-            
-            // Reset all UI elements
-            document.querySelector('.option-buttons').style.display = 'flex';
-            cameraContainer.style.display = 'none';
-            uploadContainer.style.display = 'none';
-            loading.style.display = 'none';
-            resultsContainer.style.display = 'none';
-            errorMessage.style.display = 'none';
-            
-            // Reset file input
-            fileInput.value = '';
-        }
-        
-        function showError(message) {
-            errorText.textContent = message;
-            errorMessage.style.display = 'block';
-        }
-    </script>
-</body>
-</html>
+                <!-- NEW: Processing Details -->
+                <div id="processing-info" class="processing-info" style="display: none;">
