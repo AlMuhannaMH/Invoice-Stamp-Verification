@@ -2,99 +2,572 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Invoice Stamp Verification</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-        #camera { width: 100%; max-width: 500px; margin: 0 auto; }
-        video, canvas { width: 100%; border: 2px solid #ddd; border-radius: 10px; }
-        button { padding: 12px 24px; font-size: 18px; margin: 10px; background: #4285f4; color: white; border: none; border-radius: 5px; }
-        .results { display: flex; justify-content: space-around; flex-wrap: wrap; }
-        .stamp-box { margin: 10px; text-align: center; }
-        img { max-width: 300px; border: 1px solid #ccc; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        header {
+            background: #4285f4;
+            color: white;
+            text-align: center;
+            padding: 25px 20px;
+        }
+        
+        header h1 {
+            font-size: 1.6rem;
+            margin-bottom: 5px;
+        }
+        
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 25px 20px;
+        }
+        
+        .option-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .btn {
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            background: #4285f4;
+            color: white;
+            box-shadow: 0 4px 10px rgba(66, 133, 244, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #f1f3f4;
+            color: #5f6368;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .camera-container, .upload-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .camera-box {
+            position: relative;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+        
+        .camera-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .capture-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: white;
+            border: 5px solid #4285f4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        
+        .capture-inner {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #4285f4;
+        }
+        
+        .cancel-btn {
+            background: #ea4335;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .upload-box {
+            border: 2px dashed #dadce0;
+            border-radius: 15px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-box.active {
+            border-color: #4285f4;
+            background: #e8f0fe;
+        }
+        
+        .upload-box p {
+            color: #5f6368;
+            margin: 15px 0;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .upload-btn {
+            background: #4285f4;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-weight: 600;
+            display: inline-block;
+            cursor: pointer;
+        }
+        
+        .results-container {
+            display: none;
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid #eee;
+        }
+        
+        .status-box {
+            background: #e8f0fe;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .status-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .status-valid {
+            color: #34a853;
+        }
+        
+        .status-invalid {
+            color: #ea4335;
+        }
+        
+        .stamp-comparison {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        
+        .stamp-box {
+            text-align: center;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .stamp-box h3 {
+            margin-bottom: 10px;
+            color: #5f6368;
+        }
+        
+        .stamp-img {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid #eee;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+        }
+        
+        .new-verification {
+            background: #f1f3f4;
+            color: #5f6368;
+            border: none;
+            padding: 15px;
+            border-radius: 12px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 30px;
+            cursor: pointer;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4285f4;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #fce8e6;
+            color: #ea4335;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 15px;
+            }
+            
+            .container {
+                border-radius: 15px;
+            }
+            
+            header {
+                padding: 20px 15px;
+            }
+            
+            header h1 {
+                font-size: 1.4rem;
+            }
+            
+            .main-content {
+                padding: 20px 15px;
+            }
+            
+            .btn {
+                padding: 14px;
+                font-size: 1rem;
+            }
+        }
     </style>
 </head>
 <body>
-    <h1>Invoice Stamp Verification</h1>
-    
-    <div id="camera">
-        <video id="video" autoplay playsinline></video>
-        <button id="capture">Capture Invoice</button>
-        <canvas id="canvas" style="display:none;"></canvas>
-    </div>
-    
-    <div id="results" style="display:none;">
-        <h2 id="status">Processing your invoice...</h2>
-        <div class="results">
-            <div class="stamp-box">
-                <h3>Detected Stamp</h3>
-                <img id="detectedStamp">
+    <div class="container">
+        <header>
+            <h1>Invoice Stamp Verification</h1>
+            <p>Verify your stamped invoice using camera or file upload</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="option-buttons">
+                <button id="camera-btn" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Take Photo
+                </button>
+                <button id="upload-btn" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Upload Photo
+                </button>
             </div>
-            <div class="stamp-box">
-                <h3>Database Stamp</h3>
-                <img id="databaseStamp">
+            
+            <div id="camera-container" class="camera-container">
+                <div class="camera-box">
+                    <video id="video" autoplay playsinline></video>
+                </div>
+                <div class="camera-controls">
+                    <div id="capture-btn" class="capture-btn">
+                        <div class="capture-inner"></div>
+                    </div>
+                </div>
+                <button id="cancel-camera" class="cancel-btn">Cancel</button>
+            </div>
+            
+            <div id="upload-container" class="upload-container">
+                <div id="upload-box" class="upload-box">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p>Tap to select invoice photo from your device</p>
+                    <div id="upload-trigger" class="upload-btn">Choose File</div>
+                    <input type="file" id="file-input" class="file-input" accept="image/*">
+                </div>
+                <button id="cancel-upload" class="cancel-btn">Cancel</button>
+            </div>
+            
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Verifying your invoice stamp...</p>
+            </div>
+            
+            <div id="results-container" class="results-container">
+                <div id="status-box" class="status-box">
+                    <div id="status-text" class="status-text">Verification Complete</div>
+                    <p id="customer-id">Customer ID: <span id="customer-id-value"></span></p>
+                </div>
+                
+                <div class="stamp-comparison">
+                    <div class="stamp-box">
+                        <h3>Your Stamp</h3>
+                        <img id="detected-stamp" class="stamp-img">
+                    </div>
+                    <div class="stamp-box">
+                        <h3>Database Stamp</h3>
+                        <img id="database-stamp" class="stamp-img">
+                    </div>
+                </div>
+                
+                <button id="new-verification" class="new-verification">Verify Another Invoice</button>
+            </div>
+            
+            <div id="error-message" class="error-message">
+                <p id="error-text"></p>
             </div>
         </div>
     </div>
 
     <script>
-        // Access phone camera
+        // DOM Elements
+        const cameraBtn = document.getElementById('camera-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const cameraContainer = document.getElementById('camera-container');
+        const uploadContainer = document.getElementById('upload-container');
         const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const captureBtn = document.getElementById('capture');
-        const ctx = canvas.getContext('2d');
+        const captureBtn = document.getElementById('capture-btn');
+        const cancelCameraBtn = document.getElementById('cancel-camera');
+        const uploadBox = document.getElementById('upload-box');
+        const fileInput = document.getElementById('file-input');
+        const uploadTrigger = document.getElementById('upload-trigger');
+        const cancelUploadBtn = document.getElementById('cancel-upload');
+        const loading = document.getElementById('loading');
+        const resultsContainer = document.getElementById('results-container');
+        const statusText = document.getElementById('status-text');
+        const customerIdValue = document.getElementById('customer-id-value');
+        const detectedStamp = document.getElementById('detected-stamp');
+        const databaseStamp = document.getElementById('database-stamp');
+        const newVerificationBtn = document.getElementById('new-verification');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
         
-        // Check for mobile browser support
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                .then(stream => {
+        // State variables
+        let stream = null;
+        
+        // Event Listeners
+        cameraBtn.addEventListener('click', startCamera);
+        uploadBtn.addEventListener('click', showUpload);
+        captureBtn.addEventListener('click', capturePhoto);
+        cancelCameraBtn.addEventListener('click', resetUI);
+        uploadTrigger.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileUpload);
+        cancelUploadBtn.addEventListener('click', resetUI);
+        newVerificationBtn.addEventListener('click', resetUI);
+        
+        // Highlight upload box when file is dragged over
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('active');
+        });
+        
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('active');
+        });
+        
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileUpload();
+            }
+        });
+        
+        // Functions
+        function startCamera() {
+            // Hide buttons and show camera
+            document.querySelector('.option-buttons').style.display = 'none';
+            cameraContainer.style.display = 'block';
+            
+            // Access phone camera
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                })
+                .then(mediaStream => {
+                    stream = mediaStream;
                     video.srcObject = stream;
                     video.play();
                 })
                 .catch(err => {
-                    alert('Camera error: ' + err.message);
+                    showError('Camera access error: ' + err.message);
+                    resetUI();
                 });
-        } else {
-            alert('Camera not supported on this device');
+            } else {
+                showError('Camera not supported on this device');
+                resetUI();
+            }
         }
         
-        // Capture photo
-        captureBtn.addEventListener('click', () => {
+        function showUpload() {
+            document.querySelector('.option-buttons').style.display = 'none';
+            uploadContainer.style.display = 'block';
+        }
+        
+        function capturePhoto() {
+            const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth;
             canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             
-            // Show processing message
-            document.getElementById('results').style.display = 'block';
-            document.getElementById('status').textContent = 'Processing...';
+            // Stop camera stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
             
-            // Convert to JPEG
-            const imageData = canvas.toDataURL('image/jpeg');
-            
-            // Send to backend
-            processImage(imageData);
-        });
+            processImage(canvas.toDataURL('image/jpeg'));
+        }
         
-        // Send to cloud function
-        async function processImage(imageData) {
-            try {
-                // Replace with your cloud function URL
-                const response = await fetch('YOUR_CLOUD_FUNCTION_URL', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ image: imageData })
-                });
-                
-                const result = await response.json();
+        function handleFileUpload() {
+            if (fileInput.files && fileInput.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    processImage(e.target.result);
+                };
+                reader.readAsDataURL(fileInput.files[0]);
+            }
+        }
+        
+        function processImage(imageData) {
+            // Hide UI and show loading
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+            
+            // Send to backend (replace with your actual endpoint)
+            const backendUrl = 'YOUR_BACKEND_ENDPOINT_URL';
+            
+            fetch(backendUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.error) {
+                    throw new Error(result.error);
+                }
                 
                 // Display results
-                document.getElementById('detectedStamp').src = result.extracted_stamp;
-                document.getElementById('databaseStamp').src = result.database_stamp;
-                document.getElementById('status').textContent = 
-                    result.match ? '✅ VALID STAMP' : '❌ INVALID STAMP';
-            } catch (error) {
-                document.getElementById('status').textContent = 'Error: ' + error.message;
+                loading.style.display = 'none';
+                resultsContainer.style.display = 'block';
+                
+                customerIdValue.textContent = result.customer_id || 'Not found';
+                detectedStamp.src = result.extracted_stamp || '';
+                databaseStamp.src = result.database_stamp || '';
+                
+                if (result.match) {
+                    statusText.textContent = '✅ VALID STAMP';
+                    statusText.className = 'status-text status-valid';
+                } else {
+                    statusText.textContent = '❌ INVALID STAMP';
+                    statusText.className = 'status-text status-invalid';
+                }
+            })
+            .catch(error => {
+                loading.style.display = 'none';
+                showError(error.message || 'Processing failed. Please try again.');
+            });
+        }
+        
+        function resetUI() {
+            // Stop camera if active
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
             }
+            
+            // Reset all UI elements
+            document.querySelector('.option-buttons').style.display = 'flex';
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            errorMessage.style.display = 'none';
+            
+            // Reset file input
+            fileInput.value = '';
+        }
+        
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
         }
     </script>
 </body>
