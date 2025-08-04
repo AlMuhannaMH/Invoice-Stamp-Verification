@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Invoice Stamp Verification</title>
+</head>
+<body>
+    <h1>Upload Stamped Invoice</h1>
+    
+    <!-- Camera capture -->
+    <div>
+        <video id="video" width="320" height="240" autoplay></video>
+        <button id="capture-btn">Capture Photo</button>
+    </div>
+    
+    <!-- OR file upload -->
+    <div>
+        <input type="file" id="file-upload" accept="image/*">
+    </div>
+    
+    <!-- Display results -->
+    <div id="results" style="display:none">
+        <h2>Verification Result: <span id="status"></span></h2>
+        <div style="display:flex">
+            <div>
+                <h3>Your Stamp</h3>
+                <img id="uploaded-stamp" width="200">
+            </div>
+            <div>
+                <h3>Database Stamp</h3>
+                <img id="database-stamp" width="200">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Camera access
+        const video = document.getElementById('video');
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => video.srcObject = stream);
+
+        // Capture photo
+        document.getElementById('capture-btn').addEventListener('click', () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            processImage(canvas.toDataURL('image/jpeg'));
+        });
+
+        // File upload
+        document.getElementById('file-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = (event) => processImage(event.target.result);
+            reader.readAsDataURL(file);
+        });
+
+        // Send to n8n
+        async function processImage(imageData) {
+            const response = await fetch('https://YOUR_N8N_URL/webhook/upload', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ image: imageData.split(',')[1] })
+            });
+            
+            const result = await response.json();
+            
+            // Show results
+            document.getElementById('uploaded-stamp').src = `data:image/jpeg;base64,${result.extractedStamp}`;
+            document.getElementById('database-stamp').src = `data:image/jpeg;base64,${result.databaseStamp}`;
+            document.getElementById('status').textContent = 
+                result.match ? "✅ Valid Stamp" : "❌ Invalid Stamp";
+            document.getElementById('results').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
