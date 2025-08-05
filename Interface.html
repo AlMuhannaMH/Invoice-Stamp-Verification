@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OCR Document Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 1px solid #ddd;
+            padding: 20px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Document Verification System</h1>
+        <div class="form-group">
+            <label for="customerId">Customer ID:</label>
+            <input type="text" id="customerId" placeholder="Enter customer ID">
+        </div>
+        <div class="form-group">
+            <label for="documentUpload">Upload Document (Image/PDF):</label>
+            <input type="file" id="documentUpload" accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+        <button onclick="verifyDocument()">Verify Document</button>
+        
+        <div id="results">
+            <h3>Verification Results</h3>
+            <p>Submit a document to begin verification.</p>
+        </div>
+    </div>
+
+    <script>
+        async function verifyDocument() {
+            const customerId = document.getElementById('customerId').value;
+            const fileInput = document.getElementById('documentUpload');
+            const resultsDiv = document.getElementById('results');
+            
+            if (!customerId || !fileInput.files || fileInput.files.length === 0) {
+                resultsDiv.innerHTML = '<h3>Verification Results</h3><p style="color:red;">Please enter a customer ID and select a file.</p>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<h3>Verification Results</h3><p>Processing document...</p>';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                formData.append('customerId', customerId);
+                
+                const response = await fetch('YOUR_N8N_WEBHOOK_URL_HERE', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultsDiv.innerHTML = `
+                        <h3>Verification Results</h3>
+                        <p><strong>Status:</strong> <span style="color:green;">Verified Successfully</span></p>
+                        <p><strong>Customer ID:</strong> ${data.customerId}</p>
+                        <p><strong>Document Type:</strong> ${data.docType}</p>
+                        <p><strong>Stamp Match:</strong> ${data.stampMatch ? '✅ Match' : '❌ No Match'}</p>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <h3>Verification Results</h3>
+                        <p><strong>Status:</strong> <span style="color:red;">Verification Failed</span></p>
+                        <p><strong>Error:</strong> ${data.error || 'Unknown error'}</p>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <h3>Verification Results</h3>
+                    <p><strong>Status:</strong> <span style="color:red;">Error Processing Request</span></p>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
