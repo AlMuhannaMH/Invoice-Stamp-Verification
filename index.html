@@ -474,4 +474,341 @@
             </div>
             
             <div id="error-message" class="error-message">
-                <p id="
+                <p id="error-text"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const cameraBtn = document.getElementById('camera-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const cameraContainer = document.getElementById('camera-container');
+        const uploadContainer = document.getElementById('upload-container');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('capture-btn');
+        const cancelCameraBtn = document.getElementById('cancel-camera');
+        const uploadBox = document.getElementById('upload-box');
+        const fileInput = document.getElementById('file-input');
+        const uploadTrigger = document.getElementById('upload-trigger');
+        const cancelUploadBtn = document.getElementById('cancel-upload');
+        const loading = document.getElementById('loading');
+        const resultsContainer = document.getElementById('results-container');
+        const statusText = document.getElementById('status-text');
+        const customerIdValue = document.getElementById('customer-id-value');
+        const detectedStamp = document.getElementById('detected-stamp');
+        const databaseStamp = document.getElementById('database-stamp');
+        const newVerificationBtn = document.getElementById('new-verification');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const customerIdInput = document.getElementById('customer-id-input');
+        const processingInfo = document.getElementById('processing-info');
+        const processingDetails = document.getElementById('processing-details');
+        
+        // State variables
+        let stream = null;
+        
+        // ⚠️ IMPORTANT: Replace with your actual N8N webhook URL
+        const backendUrl = 'https://almuhannamh.app.n8n.cloud/webhook/verify-stamp';
+        
+        // Event Listeners
+        cameraBtn.addEventListener('click', startCamera);
+        uploadBtn.addEventListener('click', showUpload);
+        captureBtn.addEventListener('click', capturePhoto);
+        cancelCameraBtn.addEventListener('click', resetUI);
+        uploadTrigger.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileUpload);
+        cancelUploadBtn.addEventListener('click', resetUI);
+        newVerificationBtn.addEventListener('click', resetUI);
+        
+        // Upload box drag and drop functionality
+        uploadBox.addEventListener('click', () => fileInput.click());
+        
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('active');
+        });
+        
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('active');
+        });
+        
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileUpload();
+            }
+        });
+        
+        // Functions
+        function startCamera() {
+            console.log('📸 Starting camera...');
+            
+            // Hide buttons and show camera
+            document.querySelector('.option-buttons').style.display = 'none';
+            cameraContainer.style.display = 'block';
+            
+            // Access phone camera
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', // Use back camera on mobile
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                })
+                .then(mediaStream => {
+                    console.log('✅ Camera access granted');
+                    stream = mediaStream;
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch(err => {
+                    console.error('❌ Camera error:', err);
+                    showError('Camera access error: ' + err.message);
+                    resetUI();
+                });
+            } else {
+                console.error('❌ Camera not supported');
+                showError('Camera not supported on this device');
+                resetUI();
+            }
+        }
+        
+        function showUpload() {
+            console.log('📁 Showing upload interface...');
+            document.querySelector('.option-buttons').style.display = 'none';
+            uploadContainer.style.display = 'block';
+        }
+        
+        function capturePhoto() {
+            console.log('📸 Capturing photo...');
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Stop camera stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                console.log('📸 Camera stopped');
+            }
+            
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            processImage(imageData);
+        }
+        
+        function handleFileUpload() {
+            console.log('📁 Processing file upload...');
+            
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                console.log('📁 File selected:', file.name, file.type, file.size + ' bytes');
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    console.log('📁 File read successfully');
+                    processImage(e.target.result);
+                };
+                reader.onerror = (e) => {
+                    console.error('❌ File read error:', e);
+                    showError('Error reading file');
+                };
+                reader.readAsDataURL(file);
+            } else {
+                console.error('❌ No file selected');
+                showError('No file selected');
+            }
+        }
+        
+        function processImage(imageData) {
+            console.log('🔍 Processing image...');
+            
+            // Hide UI and show loading
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+            processingInfo.style.display = 'none';
+            
+            // Get customer ID from input field (optional)
+            const customerId = customerIdInput.value.trim();
+            
+            console.log('📋 Customer ID:', customerId || 'Auto-detect');
+            console.log('🚀 Sending to N8N:', backendUrl);
+            
+            const payload = { 
+                image: imageData,
+                customer_id: customerId || null
+            };
+            
+            fetch(backendUrl, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => {
+                console.log('📊 Response status:', response.status);
+                console.log('📊 Response headers:', response.headers);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return response.json();
+            })
+            .then(result => {
+                console.log('✅ Response received:', result);
+                
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+                
+                // Display results
+                displayResults(result);
+            })
+            .catch(error => {
+                console.error('❌ Processing failed:', error);
+                loading.style.display = 'none';
+                
+                let errorMsg = error.message || 'Processing failed. Please try again.';
+                
+                // Add helpful error messages
+                if (error.message.includes('Failed to fetch')) {
+                    errorMsg = 'Cannot connect to verification service. Please check your internet connection and try again.';
+                } else if (error.message.includes('HTTP 404')) {
+                    errorMsg = 'Verification service not found. Please check the webhook URL configuration.';
+                } else if (error.message.includes('HTTP 500')) {
+                    errorMsg = 'Server error in verification service. Please try again later.';
+                }
+                
+                showError(errorMsg);
+            });
+        }
+        
+        function displayResults(result) {
+            console.log('📋 Displaying results...');
+            
+            loading.style.display = 'none';
+            resultsContainer.style.display = 'block';
+            
+            // Update customer ID
+            customerIdValue.textContent = result.customer_id || 'Not found';
+            
+            // Update status
+            if (result.match) {
+                statusText.textContent = '✅ VALID STAMP';
+                statusText.className = 'status-text status-valid';
+            } else {
+                statusText.textContent = '❌ INVALID STAMP';
+                statusText.className = 'status-text status-invalid';
+            }
+            
+            // Update detected stamp
+            if (result.extracted_stamp) {
+                detectedStamp.src = result.extracted_stamp;
+                detectedStamp.style.display = 'block';
+            } else {
+                detectedStamp.style.display = 'none';
+            }
+            
+            // Handle database signature (PDF link instead of image)
+            const stampBox = databaseStamp.parentNode;
+            
+            // Remove any existing PDF links
+            const existingLinks = stampBox.querySelectorAll('.pdf-link');
+            existingLinks.forEach(link => link.remove());
+            
+            if (result.signature_url && result.match) {
+                // Hide the image and show PDF link
+                databaseStamp.style.display = 'none';
+                
+                const pdfLink = document.createElement('a');
+                pdfLink.href = result.signature_url;
+                pdfLink.target = '_blank';
+                pdfLink.rel = 'noopener noreferrer';
+                pdfLink.className = 'pdf-link';
+                pdfLink.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    View Original Signature PDF
+                `;
+                stampBox.appendChild(pdfLink);
+            } else if (result.database_stamp) {
+                // Show database stamp image if available
+                databaseStamp.src = result.database_stamp;
+                databaseStamp.style.display = 'block';
+            } else {
+                // Show placeholder or message
+                databaseStamp.style.display = 'none';
+                if (!result.match) {
+                    const noSignatureMsg = document.createElement('p');
+                    noSignatureMsg.textContent = 'No signature found for this customer';
+                    noSignatureMsg.style.color = '#5f6368';
+                    noSignatureMsg.style.fontStyle = 'italic';
+                    stampBox.appendChild(noSignatureMsg);
+                }
+            }
+            
+            // Show processing details if available
+            if (result.processing_details) {
+                processingDetails.innerHTML = `
+                    Similarity Score: ${(result.similarity_score * 100).toFixed(1)}%<br>
+                    Confidence: ${(result.confidence * 100).toFixed(1)}%<br>
+                    Processed: ${new Date(result.processing_details.timestamp).toLocaleString()}
+                `;
+                processingInfo.style.display = 'block';
+            }
+        }
+        
+        function resetUI() {
+            console.log('🔄 Resetting UI...');
+            
+            // Stop camera if active
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                console.log('📸 Camera stopped');
+            }
+            
+            // Reset all UI elements
+            document.querySelector('.option-buttons').style.display = 'flex';
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            errorMessage.style.display = 'none';
+            processingInfo.style.display = 'none';
+            
+            // Reset file input and customer ID
+            fileInput.value = '';
+            customerIdInput.value = '';
+            
+            // Clear any dynamic content
+            const existingLinks = document.querySelectorAll('.pdf-link');
+            existingLinks.forEach(link => link.remove());
+            
+            console.log('✅ UI reset complete');
+        }
+        
+        function showError(message) {
+            console.error('❌ Showing error:', message);
+            errorText.textContent = message;
+            errorMessage.style.display = 'block';
+        }
+        
+        // Initialize
+        console.log('🚀 Invoice Stamp Verification App Loaded');
+        console.log('🔗 Backend URL:', backendUrl);
+    </script>
+</body>
+</html>
