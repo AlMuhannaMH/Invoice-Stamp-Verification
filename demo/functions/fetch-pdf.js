@@ -1,13 +1,11 @@
 // demo/functions/fetch-pdf.js    
-// If you test locally with `netlify dev`, install node-fetch:    
-//    npm install node-fetch@2    
-const fetch = require("node-fetch");    
     
 exports.handler = async (event) => {    
   const id  = event.queryStringParameters.id || "";    
   const url = `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${id}.pdf`;    
     
   try {    
+    // Use the built-in fetch—no need to import anything    
     const res = await fetch(url);    
     if (!res.ok) {    
       return {    
@@ -24,7 +22,7 @@ exports.handler = async (event) => {
       isBase64Encoded: true,    
       headers: {    
         "Content-Type": "application/pdf",    
-        "Access-Control-Allow-Origin": "*"     // <– this allows your browser to receive it    
+        "Access-Control-Allow-Origin": "*"    // allow browser to read it    
       },    
       body: base64PDF    
     };    
