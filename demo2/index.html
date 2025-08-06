@@ -1,0 +1,62 @@
+<!DOCTYPE html>    
+<html lang="en">    
+<head>    
+  <meta charset="UTF-8" />    
+  <title>Stamp Match Checker</title>    
+  <link rel="stylesheet" href="style.css" />    
+</head>    
+<body>    
+  <div class="container">    
+    <header>    
+      <h1>Stamp Match Checker</h1>    
+      <p>Compare your uploaded image with the PDF stamp</p>    
+    </header>    
+    
+    <div class="main-content">    
+      <div class="input-section">    
+        <div class="form-group">    
+          <label for="pdfId">PDF ID:</label>    
+          <input id="pdfId" type="text" placeholder="e.g. 96600001" />    
+        </div>    
+    
+        <div class="form-group">    
+          <label for="fileInput">Upload Image:</label>    
+          <input id="fileInput" type="file" accept="image/*" />    
+        </div>    
+    
+        <button id="btnCheck" disabled>Check Match</button>    
+      </div>    
+    
+      <div id="result">    
+        <div class="canvas-container">    
+          <h2>PDF Stamp</h2>    
+          <canvas id="canvasPdf"></canvas>    
+        </div>    
+        <div class="canvas-container">    
+          <h2>Your Image</h2>    
+          <canvas id="canvasUp"></canvas>    
+        </div>    
+      </div>    
+    
+      <p id="score"></p>    
+    </div>    
+  </div>    
+    
+  <!-- PDF.js -->    
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>    
+  <script>    
+    pdfjsLib.GlobalWorkerOptions.workerSrc =    
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';    
+  </script>    
+  <!-- OpenCV.js -->    
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>    
+  <script>    
+    cv['onRuntimeInitialized'] = () => {    
+      document.getElementById('btnCheck').disabled = false;    
+      const s = document.createElement('script');    
+      s.src = 'script.js';    
+      document.body.append(s);    
+    };    
+  </script>    
+</body>    
+</html>    
