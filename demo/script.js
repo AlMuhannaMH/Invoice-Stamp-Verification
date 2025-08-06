@@ -9,31 +9,32 @@ document.getElementById("btnCheck").onclick = async () => {
     return alert("Please enter a PDF ID and select an image.");    
   }    
     
-  // === 1) Fetch via our Netlify Function ===    
+  // 1) Proxy‐free fetch via our Function (returns binary PDF)    
   const fnUrl = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(id)}`;    
   let res;    
   try {    
     res = await fetch(fnUrl);    
-    if (!res.ok) throw new Error(`Function error: ${res.statusText}`);    
+    if (!res.ok) throw new Error(res.statusText);    
   } catch (err) {    
     return alert("Failed to fetch PDF: " + err.message);    
   }    
-  const pdfBase64 = await res.text();    
-  const pdfData   = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));    
     
-  // === 2) Render PDF page #1 ===    
+  // 2) Read the PDF bytes directly    
+  const pdfData = await res.arrayBuffer();    
+    
+  // 3) Render PDF page #1    
   const pdf     = await pdfjsLib.getDocument({ data: pdfData }).promise;    
   const page    = await pdf.getPage(1);    
-  const viewport= page.getViewport({ scale: 2 });    
+  const vp      = page.getViewport({ scale: 2 });    
   const cPdf    = document.getElementById("canvasPdf");    
-  cPdf.width    = viewport.width;    
-  cPdf.height   = viewport.height;    
+  cPdf.width    = vp.width;    
+  cPdf.height   = vp.height;    
   await page.render({    
     canvasContext: cPdf.getContext("2d"),    
-    viewport: viewport    
+    viewport: vp    
   }).promise;    
     
-  // === 3) Draw uploaded image ===    
+  // 4) Draw the uploaded image    
   const img = new Image();    
   img.src = URL.createObjectURL(file);    
   await new Promise(r => (img.onload = r));    
@@ -42,7 +43,7 @@ document.getElementById("btnCheck").onclick = async () => {
   cUp.height = img.height;    
   cUp.getContext("2d").drawImage(img, 0, 0);    
     
-  // === 4) ORB matching with OpenCV.js ===    
+  // 5) ORB feature matching (unchanged)    
   let matA = cv.imread(cPdf), matB = cv.imread(cUp);    
   cv.cvtColor(matA, matA, cv.COLOR_RGBA2GRAY);    
   cv.cvtColor(matB, matB, cv.COLOR_RGBA2GRAY);    
@@ -53,7 +54,7 @@ document.getElementById("btnCheck").onclick = async () => {
   orb.detectAndCompute(matA, new cv.Mat(), kpa, dsa);    
   orb.detectAndCompute(matB, new cv.Mat(), kpb, dsb);    
     
-  let bf = new cv.BFMatcher(cv.NORM_HAMMING, false);    
+  let bf      = new cv.BFMatcher(cv.NORM_HAMMING, false);    
   let matches = new cv.DMatchVectorVector();    
   bf.knnMatch(dsa, dsb, matches, 2);    
     
@@ -68,7 +69,9 @@ document.getElementById("btnCheck").onclick = async () => {
   const score = total ? Math.floor((100 * good) / total) : 0;    
   const el    = document.getElementById("score");    
   el.textContent = `Similarity: ${score}%`;    
-  el.style.background = `linear-gradient(to right, green ${score}%, red ${score}%)`;    
+  el.style.background = `linear-gradient(    
+    to right, green ${score}%, red ${score}%    
+  )`;    
     
   // Cleanup    
   matA.delete(); matB.delete();    
