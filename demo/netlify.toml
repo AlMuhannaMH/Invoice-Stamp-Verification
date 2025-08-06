@@ -1,5 +1,6 @@
 [build]    
-  publish = "."   # Netlify will publish everything under demo/    
+  publish   = "."            # everything under demo/ is your site    
+  functions = "functions"    # point Netlify at demo/functions/    
     
 [dev]    
-  port = 8888     # (optional) if you ever use `netlify dev`    
+  port = 8888                # (optional)    

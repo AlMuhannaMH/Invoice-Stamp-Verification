@@ -1,4 +1,3 @@
-// Called when OpenCV.js finishes loading    
 function onOpenCvReady() {    
   console.log("OpenCV.js is ready");    
 }    
@@ -10,55 +9,54 @@ document.getElementById("btnCheck").onclick = async () => {
     return alert("Please enter a PDF ID and select an image.");    
   }    
     
-  // 1) Fetch the PDF directly from your public endpoint    
-  const pdfUrl = `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${id}.pdf`;    
-  let resp;    
+  // === 1) Fetch via our Netlify Function ===    
+  const fnUrl = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(id)}`;    
+  let res;    
   try {    
-    resp = await fetch(pdfUrl);    
-    if (!resp.ok) throw new Error(`Status ${resp.status}`);    
+    res = await fetch(fnUrl);    
+    if (!res.ok) throw new Error(`Function error: ${res.statusText}`);    
   } catch (err) {    
     return alert("Failed to fetch PDF: " + err.message);    
   }    
-  const pdfBuf = await resp.arrayBuffer();    
+  const pdfBase64 = await res.text();    
+  const pdfData   = Uint8Array.from(atob(pdfBase64), c => c.charCodeAt(0));    
     
-  // 2) Render PDF page #1 into canvasPdf    
-  const pdf    = await pdfjsLib.getDocument({ data: pdfBuf }).promise;    
-  const page   = await pdf.getPage(1);    
-  const vp     = page.getViewport({ scale: 2 });    
-  const cPdf   = document.getElementById("canvasPdf");    
-  cPdf.width   = vp.width;    
-  cPdf.height  = vp.height;    
+  // === 2) Render PDF page #1 ===    
+  const pdf     = await pdfjsLib.getDocument({ data: pdfData }).promise;    
+  const page    = await pdf.getPage(1);    
+  const viewport= page.getViewport({ scale: 2 });    
+  const cPdf    = document.getElementById("canvasPdf");    
+  cPdf.width    = viewport.width;    
+  cPdf.height   = viewport.height;    
   await page.render({    
     canvasContext: cPdf.getContext("2d"),    
-    viewport: vp    
+    viewport: viewport    
   }).promise;    
     
-  // 3) Draw uploaded image into canvasUp    
+  // === 3) Draw uploaded image ===    
   const img = new Image();    
   img.src = URL.createObjectURL(file);    
-  await new Promise(res => (img.onload = res));    
+  await new Promise(r => (img.onload = r));    
   const cUp = document.getElementById("canvasUp");    
   cUp.width  = img.width;    
   cUp.height = img.height;    
   cUp.getContext("2d").drawImage(img, 0, 0);    
     
-  // 4) ORB feature matching with OpenCV.js    
-  let matPdf = cv.imread(cPdf);    
-  let matUp  = cv.imread(cUp);    
-  cv.cvtColor(matPdf, matPdf, cv.COLOR_RGBA2GRAY);    
-  cv.cvtColor(matUp,  matUp,  cv.COLOR_RGBA2GRAY);    
+  // === 4) ORB matching with OpenCV.js ===    
+  let matA = cv.imread(cPdf), matB = cv.imread(cUp);    
+  cv.cvtColor(matA, matA, cv.COLOR_RGBA2GRAY);    
+  cv.cvtColor(matB, matB, cv.COLOR_RGBA2GRAY);    
     
-  let orb    = new cv.ORB();    
-  let kp1    = new cv.KeyPointVector(), des1 = new cv.Mat();    
-  let kp2    = new cv.KeyPointVector(), des2 = new cv.Mat();    
-  orb.detectAndCompute(matPdf, new cv.Mat(), kp1, des1);    
-  orb.detectAndCompute(matUp,  new cv.Mat(), kp2, des2);    
+  let orb = new cv.ORB();    
+  let kpa = new cv.KeyPointVector(), dsa = new cv.Mat();    
+  let kpb = new cv.KeyPointVector(), dsb = new cv.Mat();    
+  orb.detectAndCompute(matA, new cv.Mat(), kpa, dsa);    
+  orb.detectAndCompute(matB, new cv.Mat(), kpb, dsb);    
     
-  let bf      = new cv.BFMatcher(cv.NORM_HAMMING, false);    
+  let bf = new cv.BFMatcher(cv.NORM_HAMMING, false);    
   let matches = new cv.DMatchVectorVector();    
-  bf.knnMatch(des1, des2, matches, 2);    
+  bf.knnMatch(dsa, dsb, matches, 2);    
     
-  // Lowe’s ratio test    
   let good = 0;    
   for (let i = 0; i < matches.size(); i++) {    
     let m = matches.get(i).get(0),    
@@ -66,20 +64,15 @@ document.getElementById("btnCheck").onclick = async () => {
     if (m.distance < 0.75 * n.distance) good++;    
   }    
     
-  // Compute similarity %    
-  const totalKp = Math.max(kp1.size(), kp2.size());    
-  const score   = totalKp ? Math.floor((100 * good) / totalKp) : 0;    
-  const scoreEl = document.getElementById("score");    
-  scoreEl.textContent = `Similarity: ${score}%`;    
-  scoreEl.style.background = `    
-    linear-gradient(to right,    
-      green   ${score}%,    
-      red     ${score}%)    
-  `;    
+  const total = Math.max(kpa.size(), kpb.size());    
+  const score = total ? Math.floor((100 * good) / total) : 0;    
+  const el    = document.getElementById("score");    
+  el.textContent = `Similarity: ${score}%`;    
+  el.style.background = `linear-gradient(to right, green ${score}%, red ${score}%)`;    
     
   // Cleanup    
-  matPdf.delete(); matUp.delete();    
-  kp1.delete(); kp2.delete();    
-  des1.delete(); des2.delete();    
+  matA.delete(); matB.delete();    
+  kpa.delete(); kpb.delete();    
+  dsa.delete(); dsb.delete();    
   bf.delete(); matches.delete();    
 };    
