@@ -1,4 +1,4 @@
-// called when OpenCV finishes loading    
+// Called when OpenCV.js finishes loading    
 function onOpenCvReady() {    
   console.log("OpenCV.js is ready");    
 }    
@@ -6,14 +6,22 @@ function onOpenCvReady() {
 document.getElementById("btnCheck").onclick = async () => {    
   const id   = document.getElementById("pdfId").value.trim();    
   const file = document.getElementById("fileInput").files[0];    
-  if (!id || !file) return alert("Enter PDF ID and choose an image.");    
+  if (!id || !file) {    
+    return alert("Please enter a PDF ID and select an image.");    
+  }    
     
-  // 1) Fetch PDF from Netlify Function    
-  const pdfResp = await fetch(`/.netlify/functions/fetch-pdf?id=${id}`);    
-  if (!pdfResp.ok) return alert("Failed to fetch PDF");    
-  const pdfBuf = await pdfResp.arrayBuffer();    
+  // 1) Fetch the PDF directly from your public endpoint    
+  const pdfUrl = `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${id}.pdf`;    
+  let resp;    
+  try {    
+    resp = await fetch(pdfUrl);    
+    if (!resp.ok) throw new Error(`Status ${resp.status}`);    
+  } catch (err) {    
+    return alert("Failed to fetch PDF: " + err.message);    
+  }    
+  const pdfBuf = await resp.arrayBuffer();    
     
-  // 2) Render PDF page to canvasPdf    
+  // 2) Render PDF page #1 into canvasPdf    
   const pdf    = await pdfjsLib.getDocument({ data: pdfBuf }).promise;    
   const page   = await pdf.getPage(1);    
   const vp     = page.getViewport({ scale: 2 });    
@@ -25,7 +33,7 @@ document.getElementById("btnCheck").onclick = async () => {
     viewport: vp    
   }).promise;    
     
-  // 3) Draw uploaded image to canvasUp    
+  // 3) Draw uploaded image into canvasUp    
   const img = new Image();    
   img.src = URL.createObjectURL(file);    
   await new Promise(res => (img.onload = res));    
@@ -34,7 +42,7 @@ document.getElementById("btnCheck").onclick = async () => {
   cUp.height = img.height;    
   cUp.getContext("2d").drawImage(img, 0, 0);    
     
-  // 4) ORB feature matching via OpenCV.js    
+  // 4) ORB feature matching with OpenCV.js    
   let matPdf = cv.imread(cPdf);    
   let matUp  = cv.imread(cUp);    
   cv.cvtColor(matPdf, matPdf, cv.COLOR_RGBA2GRAY);    
@@ -63,7 +71,6 @@ document.getElementById("btnCheck").onclick = async () => {
   const score   = totalKp ? Math.floor((100 * good) / totalKp) : 0;    
   const scoreEl = document.getElementById("score");    
   scoreEl.textContent = `Similarity: ${score}%`;    
-  // Green→Red background    
   scoreEl.style.background = `    
     linear-gradient(to right,    
       green   ${score}%,    

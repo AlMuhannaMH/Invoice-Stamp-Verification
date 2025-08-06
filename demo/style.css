@@ -6,18 +6,18 @@ body {
 }    
 label {    
   display: block;    
-  margin: .5rem 0;    
+  margin: 0.5rem 0;    
 }    
 button {    
   margin-top: 1rem;    
-  padding: .5rem 1rem;    
+  padding: 0.5rem 1rem;    
   font-size: 1rem;    
 }    
 #result {    
   margin-top: 1.5rem;    
 }    
 #score {    
-  padding: .5rem;    
+  padding: 0.5rem;    
   color: white;    
   font-weight: bold;    
   text-align: center;    
