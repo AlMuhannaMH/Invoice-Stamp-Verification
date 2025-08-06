@@ -1,22 +1,44 @@
 body {    
   font-family: sans-serif;    
   padding: 1rem;    
-  max-width: 500px;    
+  max-width: 600px;    
   margin: auto;    
 }    
+    
 label {    
   display: block;    
   margin: 0.5rem 0;    
 }    
+    
 button {    
   margin-top: 1rem;    
   padding: 0.5rem 1rem;    
   font-size: 1rem;    
 }    
+    
+button:disabled {    
+  opacity: 0.5;    
+  cursor: not-allowed;    
+}    
+    
 #result {    
+  display: flex;    
+  gap: 1rem;    
   margin-top: 1.5rem;    
 }    
+    
+.canvas-container {    
+  text-align: center;    
+}    
+    
+.canvas-container canvas {    
+  border: 1px solid #ccc;    
+  max-width: 200px;    
+  max-height: 200px;    
+}    
+    
 #score {    
+  margin-top: 1rem;    
   padding: 0.5rem;    
   color: white;    
   font-weight: bold;    

@@ -1,9 +1,9 @@
 <!DOCTYPE html>    
 <html lang="en">    
 <head>    
-  <meta charset="UTF-8" />    
+  <meta charset="UTF-8"/>    
   <title>Stamp Match Checker</title>    
-  <link rel="stylesheet" href="style.css" />    
+  <link rel="stylesheet" href="style.css"/>    
 </head>    
 <body>    
   <h1>Stamp Match Checker</h1>    
@@ -16,18 +16,39 @@
     Upload Image:    
     <input id="fileInput" type="file" accept="image/*" />    
   </label>    
-  <button id="btnCheck">Check Match</button>    
+  <!-- disabled until OpenCV is ready -->    
+  <button id="btnCheck" disabled>Check Match</button>    
     
   <div id="result">    
-    <canvas id="canvasPdf" hidden></canvas>    
-    <canvas id="canvasUp"  hidden></canvas>    
-    <p id="score"></p>    
+    <div class="canvas-container">    
+      <h2>PDF Stamp</h2>    
+      <canvas id="canvasPdf"></canvas>    
+    </div>    
+    <div class="canvas-container">    
+      <h2>Your Image</h2>    
+      <canvas id="canvasUp"></canvas>    
+    </div>    
   </div>    
     
-  <!-- PDF.js -->    
+  <p id="score"></p>    
+    
+  <!-- PDF.js and its worker -->    
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>    
+  <script>    
+    // point PDF.js at its worker    
+    pdfjsLib.GlobalWorkerOptions.workerSrc =    
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';    
+  </script>    
+    
   <!-- OpenCV.js -->    
   <script async src="https://docs.opencv.org/4.x/opencv.js"></script>    
+  <script>    
+    // openCV sets `cv` only after its WASM is loaded    
+    cv['onRuntimeInitialized'] = () => {    
+      document.getElementById('btnCheck').disabled = false;    
+    };    
+  </script>    
+    
   <script src="script.js"></script>    
 </body>    
 </html>    
