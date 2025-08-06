@@ -1,0 +1,6 @@
+[build]    
+  publish   = "."           # Netlify will publish files from demo/    
+  functions = "functions"   # Your Functions live in demo/functions/    
+    
+[dev]    
+  port = 8888               # optional: local dev port for netlify dev    
