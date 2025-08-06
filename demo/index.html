@@ -1,9 +1,9 @@
 <!DOCTYPE html>    
 <html lang="en">    
 <head>    
-  <meta charset="UTF-8"/>    
+  <meta charset="UTF-8" />    
   <title>Stamp Match Checker</title>    
-  <link rel="stylesheet" href="style.css"/>    
+  <link rel="stylesheet" href="style.css" />    
 </head>    
 <body>    
   <h1>Stamp Match Checker</h1>    
@@ -12,11 +12,13 @@
     PDF ID:    
     <input id="pdfId" type="text" placeholder="e.g. 96600001" />    
   </label>    
+    
   <label>    
     Upload Image:    
     <input id="fileInput" type="file" accept="image/*" />    
   </label>    
-  <!-- disabled until OpenCV is ready -->    
+    
+  <!-- Disabled until OpenCV is ready -->    
   <button id="btnCheck" disabled>Check Match</button>    
     
   <div id="result">    
@@ -32,23 +34,27 @@
     
   <p id="score"></p>    
     
-  <!-- PDF.js and its worker -->    
+  <!-- 1) PDF.js + worker config -->    
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>    
   <script>    
-    // point PDF.js at its worker    
     pdfjsLib.GlobalWorkerOptions.workerSrc =    
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';    
   </script>    
     
-  <!-- OpenCV.js -->    
-  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>    
+  <!-- 2) Load OpenCV.js synchronously -->    
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>    
+    
+  <!-- 3) Hook into OpenCV ready and then load our main logic -->    
   <script>    
-    // openCV sets `cv` only after its WASM is loaded    
     cv['onRuntimeInitialized'] = () => {    
+      // Enable button only after cv is available    
       document.getElementById('btnCheck').disabled = false;    
+    
+      // Dynamically load script.js so it runs _after_ cv is ready    
+      const s = document.createElement('script');    
+      s.src = 'script.js';    
+      document.body.append(s);    
     };    
   </script>    
-    
-  <script src="script.js"></script>    
 </body>    
 </html>    

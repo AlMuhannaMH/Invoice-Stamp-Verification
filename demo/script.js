@@ -1,3 +1,5 @@
+// This file now only runs once cv is guaranteed to exist.    
+    
 document.getElementById('btnCheck').onclick = async () => {    
   const id   = document.getElementById('pdfId').value.trim();    
   const file = document.getElementById('fileInput').files[0];    
@@ -5,7 +7,7 @@ document.getElementById('btnCheck').onclick = async () => {
     return alert('Please enter a PDF ID and select an image.');    
   }    
     
-  // 1) Fetch PDF via your Netlify Function proxy    
+  // 1) Fetch the PDF via our Netlify Function proxy    
   const fnUrl = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(id)}`;    
   let res;    
   try {    
@@ -15,10 +17,10 @@ document.getElementById('btnCheck').onclick = async () => {
     return alert('Failed to fetch PDF: ' + err.message);    
   }    
     
-  // 2) Read raw bytes    
+  // 2) Read raw PDF bytes    
   const pdfData = await res.arrayBuffer();    
     
-  // 3) Render page #1    
+  // 3) Render PDF page #1 into the first canvas    
   const pdf  = await pdfjsLib.getDocument({ data: pdfData }).promise;    
   const page = await pdf.getPage(1);    
   const vp   = page.getViewport({ scale: 2 });    
@@ -30,7 +32,7 @@ document.getElementById('btnCheck').onclick = async () => {
     viewport: vp    
   }).promise;    
     
-  // 4) Draw the user’s uploaded image    
+  // 4) Draw uploaded image into the second canvas    
   const img = new Image();    
   img.src = URL.createObjectURL(file);    
   await new Promise(r => (img.onload = r));    
@@ -39,9 +41,8 @@ document.getElementById('btnCheck').onclick = async () => {
   cUp.height = img.height;    
   cUp.getContext('2d').drawImage(img, 0, 0);    
     
-  // 5) ORB feature matching via OpenCV.js    
-  let matA = cv.imread(cPdf),    
-      matB = cv.imread(cUp);    
+  // 5) ORB matching via OpenCV.js    
+  let matA = cv.imread(cPdf), matB = cv.imread(cUp);    
   cv.cvtColor(matA, matA, cv.COLOR_RGBA2GRAY);    
   cv.cvtColor(matB, matB, cv.COLOR_RGBA2GRAY);    
     
@@ -66,10 +67,10 @@ document.getElementById('btnCheck').onclick = async () => {
   const total = Math.max(kpa.size(), kpb.size()),    
         score = total ? Math.floor((100 * good) / total) : 0;    
   const el = document.getElementById('score');    
-  el.textContent       = `Similarity: ${score}%`;    
-  el.style.background  = `linear-gradient(to right, green ${score}%, red ${score}%)`;    
+  el.textContent      = `Similarity: ${score}%`;    
+  el.style.background = `linear-gradient(to right, green ${score}%, red ${score}%)`;    
     
-  // Clean up    
+  // Cleanup    
   matA.delete(); matB.delete();    
   kpa.delete(); kpb.delete();    
   dsa.delete(); dsb.delete();    
