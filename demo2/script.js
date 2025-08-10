@@ -11,7 +11,8 @@ const scoreEl = document.getElementById('score');
 // Configuration constants
 const CONFIG = {
   maxImageSize: 1024, // Maximum dimension for processing
-  minSimilarity: 30,  // Minimum threshold for a potential match
+  minSimilarity: 65,  // Minimum threshold for a potential match
+  strongMatchThreshold: 80, // Strong match confidence level
   scaleFactors: [0.5, 0.75, 1.0, 1.25, 1.5], // Multiple scales to try
   hashSize: 8,        // Size for perceptual hash
   timeoutMs: 30000    // Request timeout
@@ -233,39 +234,60 @@ async function performEnhancedMatching(uploadCanvas, pdfCanvas) {
   }
 }
 
-// Multi-scale template matching for better size tolerance
+// Multi-scale template matching with improved filtering
 async function performMultiScaleTemplateMatching(srcPdf, srcUp) {
   let bestSimilarity = 0;
+  let validMatches = 0;
+  
+  // Pre-process images with edge detection for better matching
+  let edgesPdf = new cv.Mat();
+  let edgesUp = new cv.Mat();
+  cv.Canny(srcPdf, edgesPdf, 50, 150);
+  cv.Canny(srcUp, edgesUp, 50, 150);
   
   for (const scale of CONFIG.scaleFactors) {
     try {
-      // Scale the uploaded image
-      let scaledUp = new cv.Mat();
+      let scaledEdges = new cv.Mat();
       const newSize = new cv.Size(
-        Math.round(srcUp.cols * scale),
-        Math.round(srcUp.rows * scale)
+        Math.round(edgesUp.cols * scale),
+        Math.round(edgesUp.rows * scale)
       );
-      cv.resize(srcUp, scaledUp, newSize);
+      cv.resize(edgesUp, scaledEdges, newSize);
       
-      // Perform template matching
+      if (scaledEdges.cols > edgesPdf.cols || scaledEdges.rows > edgesPdf.rows) {
+        scaledEdges.delete();
+        continue;
+      }
+      
       let result = new cv.Mat();
-      cv.matchTemplate(srcPdf, scaledUp, result, cv.TM_CCOEFF_NORMED);
+      cv.matchTemplate(edgesPdf, scaledEdges, result, cv.TM_CCOEFF_NORMED);
       
       const { maxVal } = cv.minMaxLoc(result);
       const similarity = Math.max(0, Math.round(maxVal * 100));
+      
+      if (similarity > CONFIG.minSimilarity) {
+        validMatches++;
+      }
       
       if (similarity > bestSimilarity) {
         bestSimilarity = similarity;
       }
       
-      // Cleanup
-      scaledUp.delete();
+      scaledEdges.delete();
       result.delete();
       
     } catch (error) {
       console.warn(`Template matching failed at scale ${scale}:`, error);
     }
   }
+  
+  // Penalize if too few valid matches across scales
+  if (validMatches < 2 && bestSimilarity < CONFIG.strongMatchThreshold) {
+    bestSimilarity = Math.max(0, bestSimilarity - 15);
+  }
+  
+  edgesPdf.delete();
+  edgesUp.delete();
   
   return { similarity: bestSimilarity };
 }
@@ -373,13 +395,20 @@ function hammingDistance(hash1, hash2) {
 
 // Determine confidence level based on similarity and method
 function determineConfidence(similarity, method) {
-  if (similarity >= 85) return 'high';
-  if (similarity >= 65) return 'medium';
-  if (similarity >= 40) return 'low';
+  // Apply stricter confidence criteria
+  if (similarity >= CONFIG.strongMatchThreshold) {
+    return 'high';
+  }
+  if (similarity >= CONFIG.minSimilarity + 5) {
+    return 'medium';
+  }
+  if (similarity >= CONFIG.minSimilarity - 10) {
+    return 'low';
+  }
   return 'very-low';
 }
 
-// Display comprehensive results
+// Display comprehensive results with clearer thresholds
 function displayResults(result) {
   const { similarity, method, confidence, error } = result;
   
@@ -388,47 +417,45 @@ function displayResults(result) {
     return;
   }
   
-  // Create detailed message
   let message = `Similarity: ${similarity}%`;
   let statusText = '';
+  let statusColor = '';
   
-  if (similarity >= 80) {
-    statusText = '✅ Strong Match';
-  } else if (similarity >= 60) {
-    statusText = '⚠️ Possible Match';
-  } else if (similarity >= 40) {
-    statusText = '❌ Weak Match';
+  if (similarity >= CONFIG.strongMatchThreshold) {
+    statusText = '✅ AUTHENTIC MATCH';
+    statusColor = '#4caf50';
+  } else if (similarity >= CONFIG.minSimilarity) {
+    statusText = '⚠️ REQUIRES REVIEW';  
+    statusColor = '#ff9800';
   } else {
-    statusText = '❌ No Match';
+    statusText = '❌ NO MATCH';
+    statusColor = '#f44336';
   }
   
   scoreEl.innerHTML = `
-    <div style="font-weight: bold; margin-bottom: 8px;">${statusText}</div>
+    <div style="font-weight: bold; margin-bottom: 8px; color: ${statusColor};">${statusText}</div>
     <div>${message}</div>
     <div style="font-size: 0.9em; margin-top: 6px; opacity: 0.8;">
       Method: ${method} • Confidence: ${confidence}
     </div>
+    <div style="font-size: 0.85em; margin-top: 4px; opacity: 0.7;">
+      Threshold: ${CONFIG.minSimilarity}% minimum, ${CONFIG.strongMatchThreshold}% authentic
+    </div>
   `;
   
-  // Set background gradient based on similarity
-  const greenPercent = Math.min(100, similarity);
-  const redPercent = 100 - greenPercent;
-  scoreEl.style.background = `
-    linear-gradient(to right,
-      rgba(76, 175, 80, 0.3) 0%,
-      rgba(76, 175, 80, 0.3) ${greenPercent}%,
-      rgba(244, 67, 54, 0.3) ${greenPercent}%,
-      rgba(244, 67, 54, 0.3) 100%)
-  `;
+  // Set background based on match quality
+  let backgroundColor;
+  if (similarity >= CONFIG.strongMatchThreshold) {
+    backgroundColor = 'rgba(76, 175, 80, 0.15)';
+  } else if (similarity >= CONFIG.minSimilarity) {
+    backgroundColor = 'rgba(255, 152, 0, 0.15)';
+  } else {
+    backgroundColor = 'rgba(244, 67, 54, 0.15)';
+  }
   
-  // Add border color based on confidence
-  const borderColors = {
-    'high': '#4caf50',
-    'medium': '#ff9800',
-    'low': '#f44336',
-    'very-low': '#9e9e9e'
-  };
-  scoreEl.style.borderColor = borderColors[confidence] || '#dadce0';
+  scoreEl.style.background = backgroundColor;
+  scoreEl.style.borderColor = statusColor;
+  scoreEl.style.borderWidth = '2px';
 }
 
 // Enhanced error display
