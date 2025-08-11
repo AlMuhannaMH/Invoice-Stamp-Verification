@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Screenshot and Share</title>
+    <title>Screenshot and Share with Image Upload</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <style>
         body {
@@ -59,10 +59,102 @@
             opacity: 0.8;
         }
         
+        .uploaded-image-container {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            display: none;
+        }
+        
+        .uploaded-image {
+            max-width: 100%;
+            max-height: 300px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        
+        .image-caption {
+            margin-top: 10px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        
         .controls {
             text-align: center;
             max-width: 600px;
             margin: 0 auto;
+        }
+        
+        .upload-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .upload-section h3 {
+            margin: 0 0 20px;
+            color: #333;
+        }
+        
+        .file-upload {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            width: 100%;
+        }
+        
+        .file-input {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+        
+        .file-upload-label {
+            display: block;
+            padding: 20px;
+            border: 2px dashed #ddd;
+            border-radius: 10px;
+            background: #fafafa;
+            transition: all 0.3s ease;
+            color: #666;
+        }
+        
+        .file-upload-label:hover {
+            border-color: #4CAF50;
+            background: #f0f8f0;
+            color: #4CAF50;
+        }
+        
+        .file-upload-label.has-file {
+            border-color: #4CAF50;
+            background: #f0f8f0;
+            color: #4CAF50;
+        }
+        
+        .file-info {
+            margin-top: 15px;
+            padding: 10px;
+            background: #e8f5e8;
+            border-radius: 5px;
+            color: #2e7d32;
+            display: none;
+        }
+        
+        .clear-btn {
+            background: #ff5722;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 10px;
         }
         
         .share-btn {
@@ -127,6 +219,12 @@
             border: 1px solid #f5c6cb;
         }
         
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        
         .preview {
             margin-top: 20px;
             text-align: center;
@@ -142,6 +240,20 @@
     </style>
 </head>
 <body>
+    <div class="controls">
+        <div class="upload-section">
+            <h3>📷 Upload Image (Optional)</h3>
+            <div class="file-upload">
+                <input type="file" class="file-input" id="image-upload" accept="image/*" onchange="handleImageUpload(event)">
+                <label for="image-upload" class="file-upload-label" id="upload-label">
+                    <div>📁 Click to upload an image</div>
+                    <small>Supports: JPG, PNG, GIF, WebP</small>
+                </label>
+            </div>
+            <div class="file-info" id="file-info"></div>
+        </div>
+    </div>
+
     <div class="container" id="screenshot-target">
         <h1>📊 My Dashboard</h1>
         <p>This is a sample container with beautiful content that you can screenshot and share!</p>
@@ -160,6 +272,11 @@
                 <span class="stat-label">Active Users</span>
             </div>
         </div>
+        
+        <div class="uploaded-image-container" id="uploaded-image-container">
+            <div class="image-caption">📸 Your uploaded image:</div>
+            <img class="uploaded-image" id="uploaded-image" alt="Uploaded image">
+        </div>
     </div>
     
     <div class="controls">
@@ -172,6 +289,82 @@
     </div>
 
     <script>
+        let uploadedImageFile = null;
+        
+        // Handle image upload
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            const label = document.getElementById('upload-label');
+            const fileInfo = document.getElementById('file-info');
+            const imageContainer = document.getElementById('uploaded-image-container');
+            const uploadedImage = document.getElementById('uploaded-image');
+            
+            if (file) {
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    updateStatus('Please select a valid image file.', 'error');
+                    return;
+                }
+                
+                // Validate file size (max 10MB)
+                if (file.size > 10 * 1024 * 1024) {
+                    updateStatus('Image file is too large. Please select a file smaller than 10MB.', 'error');
+                    return;
+                }
+                
+                uploadedImageFile = file;
+                
+                // Update upload label
+                label.classList.add('has-file');
+                label.innerHTML = `
+                    <div>✅ Image uploaded successfully!</div>
+                    <small>${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)</small>
+                `;
+                
+                // Show file info with clear button
+                fileInfo.style.display = 'block';
+                fileInfo.innerHTML = `
+                    <strong>📁 ${file.name}</strong>
+                    <button class="clear-btn" onclick="clearImage()">✖ Remove</button>
+                `;
+                
+                // Create and display image preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    uploadedImage.src = e.target.result;
+                    imageContainer.style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+                
+                updateStatus('Image uploaded successfully! It will be included in your screenshot.', 'success');
+            }
+        }
+        
+        // Clear uploaded image
+        function clearImage() {
+            uploadedImageFile = null;
+            const label = document.getElementById('upload-label');
+            const fileInfo = document.getElementById('file-info');
+            const imageContainer = document.getElementById('uploaded-image-container');
+            const fileInput = document.getElementById('image-upload');
+            
+            // Reset file input
+            fileInput.value = '';
+            
+            // Reset upload label
+            label.classList.remove('has-file');
+            label.innerHTML = `
+                <div>📁 Click to upload an image</div>
+                <small>Supports: JPG, PNG, GIF, WebP</small>
+            `;
+            
+            // Hide file info and image container
+            fileInfo.style.display = 'none';
+            imageContainer.style.display = 'none';
+            
+            updateStatus('Image removed successfully.', 'info');
+        }
+        
         // Function to capture screenshot and share
         async function captureAndShare() {
             try {
@@ -184,7 +377,8 @@
                     backgroundColor: null,
                     scale: 2, // Higher quality
                     useCORS: true,
-                    allowTaint: true
+                    allowTaint: true,
+                    logging: false
                 });
                 
                 // Convert canvas to blob
@@ -194,12 +388,14 @@
                 
                 // Check if Web Share API is supported
                 if (navigator.share && navigator.canShare) {
-                    const file = new File([blob], 'screenshot.png', { type: 'image/png' });
+                    const file = new File([blob], 'dashboard-screenshot.png', { type: 'image/png' });
                     
                     if (navigator.canShare({ files: [file] })) {
                         await navigator.share({
                             title: 'My Dashboard Screenshot',
-                            text: 'Check out my dashboard!',
+                            text: uploadedImageFile ? 
+                                'Check out my dashboard with uploaded image!' : 
+                                'Check out my dashboard!',
                             files: [file]
                         });
                         updateStatus('Screenshot shared successfully!', 'success');
@@ -231,7 +427,8 @@
                     backgroundColor: null,
                     scale: 2,
                     useCORS: true,
-                    allowTaint: true
+                    allowTaint: true,
+                    logging: false
                 });
                 
                 fallbackDownload(canvas, 'Screenshot downloaded successfully!');
@@ -247,7 +444,12 @@
         // Fallback download function
         function fallbackDownload(canvas, message) {
             const link = document.createElement('a');
-            link.download = 'screenshot-' + new Date().getTime() + '.png';
+            const timestamp = new Date().getTime();
+            const filename = uploadedImageFile ? 
+                `dashboard-with-image-${timestamp}.png` : 
+                `dashboard-${timestamp}.png`;
+            
+            link.download = filename;
             link.href = canvas.toDataURL('image/png');
             
             // Show preview
@@ -289,6 +491,33 @@
             if (!navigator.share) {
                 shareBtn.innerHTML = '💾 Save Screenshot';
                 shareBtn.title = 'Web Share API not supported - will download instead';
+            }
+        });
+        
+        // Drag and drop functionality
+        const uploadLabel = document.getElementById('upload-label');
+        
+        uploadLabel.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadLabel.style.borderColor = '#4CAF50';
+            uploadLabel.style.backgroundColor = '#f0f8f0';
+        });
+        
+        uploadLabel.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            if (!uploadedImageFile) {
+                uploadLabel.style.borderColor = '#ddd';
+                uploadLabel.style.backgroundColor = '#fafafa';
+            }
+        });
+        
+        uploadLabel.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const fileInput = document.getElementById('image-upload');
+                fileInput.files = files;
+                handleImageUpload({ target: { files } });
             }
         });
     </script>
