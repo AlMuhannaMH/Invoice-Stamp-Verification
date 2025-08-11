@@ -382,30 +382,42 @@
                 });
                 
                 // Convert canvas to blob
-                const blob = await new Promise(resolve => {
+                const screenshotBlob = await new Promise(resolve => {
                     canvas.toBlob(resolve, 'image/png', 1.0);
                 });
                 
+                // Prepare files to share
+                const filesToShare = [];
+                
+                // Add screenshot
+                const screenshotFile = new File([screenshotBlob], 'dashboard-screenshot.png', { type: 'image/png' });
+                filesToShare.push(screenshotFile);
+                
+                // Add original uploaded image if exists
+                if (uploadedImageFile) {
+                    filesToShare.push(uploadedImageFile);
+                }
+                
                 // Check if Web Share API is supported
                 if (navigator.share && navigator.canShare) {
-                    const file = new File([blob], 'dashboard-screenshot.png', { type: 'image/png' });
-                    
-                    if (navigator.canShare({ files: [file] })) {
+                    if (navigator.canShare({ files: filesToShare })) {
                         await navigator.share({
-                            title: 'My Dashboard Screenshot',
+                            title: uploadedImageFile ? 
+                                'My Dashboard + Original Image' : 
+                                'My Dashboard Screenshot',
                             text: uploadedImageFile ? 
-                                'Check out my dashboard with uploaded image!' : 
+                                `Sharing ${filesToShare.length} images: dashboard screenshot and original image!` : 
                                 'Check out my dashboard!',
-                            files: [file]
+                            files: filesToShare
                         });
-                        updateStatus('Screenshot shared successfully!', 'success');
+                        updateStatus(`Successfully shared ${filesToShare.length} image(s)!`, 'success');
                     } else {
-                        // Fallback: show download link
-                        fallbackDownload(canvas, 'Web Share API doesn\'t support files on this device. Image downloaded instead.');
+                        // Fallback: download both files
+                        fallbackMultipleDownload(canvas, uploadedImageFile, 'Web Share API doesn\'t support files on this device. Images downloaded instead.');
                     }
                 } else {
                     // Fallback for browsers without Web Share API
-                    fallbackDownload(canvas, 'Web Share API not supported. Image downloaded instead.');
+                    fallbackMultipleDownload(canvas, uploadedImageFile, 'Web Share API not supported. Images downloaded instead.');
                 }
                 
             } catch (error) {
@@ -431,7 +443,12 @@
                     logging: false
                 });
                 
-                fallbackDownload(canvas, 'Screenshot downloaded successfully!');
+                // Use multiple download if there's an uploaded image, otherwise single download
+                if (uploadedImageFile) {
+                    fallbackMultipleDownload(canvas, uploadedImageFile, 'Images downloaded successfully!');
+                } else {
+                    fallbackDownload(canvas, 'Screenshot downloaded successfully!');
+                }
                 
             } catch (error) {
                 console.error('Error downloading screenshot:', error);
@@ -441,15 +458,42 @@
             }
         }
         
-        // Fallback download function
+        // Fallback download function for multiple files
+        function fallbackMultipleDownload(canvas, originalFile, message) {
+            const timestamp = new Date().getTime();
+            
+            // Download screenshot
+            const screenshotLink = document.createElement('a');
+            screenshotLink.download = `dashboard-screenshot-${timestamp}.png`;
+            screenshotLink.href = canvas.toDataURL('image/png');
+            screenshotLink.click();
+            
+            // Download original image if exists
+            if (originalFile) {
+                setTimeout(() => {
+                    const originalLink = document.createElement('a');
+                    const url = URL.createObjectURL(originalFile);
+                    originalLink.download = `original-${originalFile.name}`;
+                    originalLink.href = url;
+                    originalLink.click();
+                    
+                    // Clean up object URL
+                    setTimeout(() => URL.revokeObjectURL(url), 1000);
+                }, 500);
+            }
+            
+            // Show preview of screenshot
+            showPreview(canvas);
+            
+            const fileCount = originalFile ? 2 : 1;
+            updateStatus(`${message} (Downloaded ${fileCount} file${fileCount > 1 ? 's' : ''})`, 'success');
+        }
+        
+        // Original fallback download function (for download button)
         function fallbackDownload(canvas, message) {
             const link = document.createElement('a');
             const timestamp = new Date().getTime();
-            const filename = uploadedImageFile ? 
-                `dashboard-with-image-${timestamp}.png` : 
-                `dashboard-${timestamp}.png`;
-            
-            link.download = filename;
+            link.download = `dashboard-screenshot-${timestamp}.png`;
             link.href = canvas.toDataURL('image/png');
             
             // Show preview
