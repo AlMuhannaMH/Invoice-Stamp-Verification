@@ -32,7 +32,7 @@
             }
         });
 
-        // Extract text from PDF using PDF.js
+        // Extract text from PDF
         async function extractTextFromPDF(file) {
             const pdfjsLib = window['pdfjs-dist/build/pdf'];
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
@@ -50,29 +50,49 @@
                 }
 
                 const customerCode = extractCustomerCode(fullText);
-                document.getElementById('result').innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
+                displayResult(customerCode);
             } catch (error) {
                 document.getElementById('result').textContent = "Error reading PDF: " + error.message;
             }
         }
 
-        // Extract text from image using Tesseract.js (OCR)
+        // Extract text from image (OCR)
         async function extractTextFromImage(file) {
             try {
-                const { data: { text } } = await Tesseract.recognize(file);
+                const { data: { text } } = await Tesseract.recognize(file, 'eng+ara'); // Supports Arabic
                 const customerCode = extractCustomerCode(text);
-                document.getElementById('result').innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
+                displayResult(customerCode);
             } catch (error) {
                 document.getElementById('result').textContent = "Error processing image: " + error.message;
             }
         }
 
-        // Extract Customer Code from text (logic for your invoice format)
+        // Improved regex to match Customer Code
         function extractCustomerCode(text) {
-            // Look for "Customer Code" followed by numbers (case-insensitive)
-            const regex = /Customer Code\s*(\d+)/i;
-            const match = text.match(regex);
-            return match ? match[1] : "Not found";
+            // Try English pattern first: "Customer Code" followed by numbers
+            let match = text.match(/Customer Code\s*(\d+)/i);
+            if (match) return match[1];
+
+            // Try Arabic pattern: "رمز العميل" followed by numbers
+            match = text.match(/رمز العميل\s*(\d+)/);
+            if (match) return match[1];
+
+            // Fallback: Search for a 8-digit number near "Code" or "رمز"
+            match = text.match(/(Code|رمز)[\s:]*(\d{8})/i);
+            if (match) return match[2];
+
+            return "Not found (check console for raw text)";
+        }
+
+        // Display result
+        function displayResult(customerCode) {
+            const resultDiv = document.getElementById('result');
+            if (customerCode === "Not found (check console for raw text)") {
+                resultDiv.innerHTML = `Customer Code: <span style="color: red;">${customerCode}</span>`;
+                console.log("Raw extracted text:", text); // Debugging
+            } else {
+                resultDiv.innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
+            }
         }
     </script>
 </body>
