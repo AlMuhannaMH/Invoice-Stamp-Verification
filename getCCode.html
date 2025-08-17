@@ -30,6 +30,10 @@
   <div id="output">Waiting for file...</div>
 
   <script>
+    // Assign pdfjsLib to global scope
+    const pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
     async function processFile() {
       const file = document.getElementById('fileInput').files[0];
       const output = document.getElementById('output');
@@ -84,5 +88,5 @@
     }
   </script>
 </body>
-v5
+v6
 </html>
