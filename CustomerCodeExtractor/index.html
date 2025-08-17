@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Code Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 15px;
+            padding: 40px 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+
+        .upload-area.dragover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .upload-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 15px 25px;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            touch-action: manipulation;
+        }
+
+        .btn:hover {
+            background: #5a67d8;
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+
+        .progress {
+            display: none;
+            margin: 20px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #edf2f7;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #667eea;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+
+        .results {
+            display: none;
+            margin-top: 20px;
+        }
+
+        .result-item {
+            background: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .customer-code {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2d3748;
+            font-family: monospace;
+        }
+
+        .error {
+            color: #e53e3e;
+            background: #fed7d7;
+            border: 1px solid #feb2b2;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .file-preview {
+            max-width: 100%;
+            max-height: 200px;
+            object-fit: contain;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            .upload-area {
+                padding: 30px 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Customer Code Extractor</h1>
+        
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-buttons">
+                <button class="btn" onclick="document.getElementById('fileInput').click()">
+                    📁 Upload File
+                </button>
+                <button class="btn btn-secondary" onclick="document.getElementById('cameraInput').click()">
+                    📷 Take Photo
+                </button>
+            </div>
+            <p style="color: #666; font-size: 14px;">Supports images (JPG, PNG) and PDF files</p>
+        </div>
+
+        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" multiple>
+        <input type="file" id="cameraInput" class="file-input" accept="image/*" capture="environment">
+
+        <div class="progress" id="progressDiv">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing...</div>
+        </div>
+
+        <div class="error" id="errorDiv"></div>
+        
+        <div class="results" id="resultsDiv">
+            <h3>Extracted Customer Codes:</h3>
+            <div id="resultsList"></div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const cameraInput = document.getElementById('cameraInput');
+        const uploadArea = document.getElementById('uploadArea');
+        const progressDiv = document.getElementById('progressDiv');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const resultsDiv = document.getElementById('resultsDiv');
+        const resultsList = document.getElementById('resultsList');
+        const errorDiv = document.getElementById('errorDiv');
+
+        // Set PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // Drag and drop functionality
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = Array.from(e.dataTransfer.files);
+            processFiles(files);
+        });
+
+        // File input handlers
+        fileInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            processFiles(files);
+        });
+
+        cameraInput.addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            processFiles(files);
+        });
+
+        async function processFiles(files) {
+            if (files.length === 0) return;
+
+            hideError();
+            showProgress();
+            clearResults();
+
+            const customerCodes = new Set();
+
+            try {
+                for (let i = 0; i < files.length; i++) {
+                    const file = files[i];
+                    updateProgress(((i / files.length) * 100), `Processing ${file.name}...`);
+
+                    let text = '';
+                    
+                    if (file.type.includes('image')) {
+                        text = await extractTextFromImage(file);
+                    } else if (file.type === 'application/pdf') {
+                        text = await extractTextFromPDF(file);
+                    } else {
+                        throw new Error(`Unsupported file type: ${file.type}`);
+                    }
+
+                    const codes = extractCustomerCodes(text);
+                    codes.forEach(code => customerCodes.add(code));
+                }
+
+                updateProgress(100, 'Complete!');
+                setTimeout(() => {
+                    hideProgress();
+                    displayResults(Array.from(customerCodes));
+                }, 500);
+
+            } catch (error) {
+                hideProgress();
+                showError(error.message);
+            }
+        }
+
+        async function extractTextFromImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const result = await Tesseract.recognize(e.target.result, 'eng', {
+                            logger: m => {
+                                if (m.status === 'recognizing text') {
+                                    const progress = Math.round(m.progress * 100);
+                                    updateProgress(progress, 'Reading text from image...');
+                                }
+                            }
+                        });
+                        resolve(result.data.text);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Failed to read image file'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function extractTextFromPDF(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function(e) {
+                    try {
+                        const pdf = await pdfjsLib.getDocument({data: e.target.result}).promise;
+                        let fullText = '';
+
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            const pageText = content.items.map(item => item.str).join(' ');
+                            fullText += pageText + ' ';
+                            
+                            updateProgress((i / pdf.numPages) * 100, `Reading PDF page ${i}/${pdf.numPages}...`);
+                        }
+
+                        resolve(fullText);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Failed to read PDF file'));
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function extractCustomerCodes(text) {
+            const regex = /966\d{5}/g;
+            const matches = text.match(regex);
+            return matches ? [...new Set(matches)] : [];
+        }
+
+        function showProgress() {
+            progressDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+        }
+
+        function hideProgress() {
+            progressDiv.style.display = 'none';
+        }
+
+        function updateProgress(percent, text) {
+            progressFill.style.width = percent + '%';
+            progressText.textContent = text;
+        }
+
+        function displayResults(codes) {
+            if (codes.length === 0) {
+                showError('No customer codes found. Please ensure the file contains codes starting with 966 followed by 5 digits.');
+                return;
+            }
+
+            resultsList.innerHTML = '';
+            codes.forEach(code => {
+                const item = document.createElement('div');
+                item.className = 'result-item';
+                item.innerHTML = `<div class="customer-code">${code}</div>`;
+                resultsList.appendChild(item);
+            });
+
+            resultsDiv.style.display = 'block';
+        }
+
+        function clearResults() {
+            resultsList.innerHTML = '';
+            resultsDiv.style.display = 'none';
+        }
+
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        function hideError() {
+            errorDiv.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
