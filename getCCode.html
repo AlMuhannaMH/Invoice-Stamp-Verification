@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Extract Customer Code from Invoice</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        #result { margin-top: 20px; font-weight: bold; }
+        #fileInput { margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h2>Upload Invoice (PDF or Image)</h2>
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg">
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const resultDiv = document.getElementById('result');
+            resultDiv.textContent = "Processing...";
+
+            if (file.type === 'application/pdf') {
+                extractTextFromPDF(file);
+            } else {
+                extractTextFromImage(file);
+            }
+        });
+
+        // Extract text from PDF using PDF.js
+        async function extractTextFromPDF(file) {
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument(arrayBuffer);
+                const pdf = await loadingTask.promise;
+
+                let fullText = '';
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(' ');
+                }
+
+                const customerCode = extractCustomerCode(fullText);
+                document.getElementById('result').innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
+            } catch (error) {
+                document.getElementById('result').textContent = "Error reading PDF: " + error.message;
+            }
+        }
+
+        // Extract text from image using Tesseract.js (OCR)
+        async function extractTextFromImage(file) {
+            try {
+                const { data: { text } } = await Tesseract.recognize(file);
+                const customerCode = extractCustomerCode(text);
+                document.getElementById('result').innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
+            } catch (error) {
+                document.getElementById('result').textContent = "Error processing image: " + error.message;
+            }
+        }
+
+        // Extract Customer Code from text (logic for your invoice format)
+        function extractCustomerCode(text) {
+            // Look for "Customer Code" followed by numbers (case-insensitive)
+            const regex = /Customer Code\s*(\d+)/i;
+            const match = text.match(regex);
+            return match ? match[1] : "Not found";
+        }
+    </script>
+</body>
+</html>
