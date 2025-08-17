@@ -1,82 +1,88 @@
-<!DOCTYPE html>    
-<html lang="en">    
-<head>    
-    <meta charset="UTF-8">    
-    <title>Extract Customer Code from PDF</title>    
-    <!-- PDF.js from CDN -->    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>    
-    <script>    
-        // Setup the worker for PDF.js to avoid warnings    
-        window.addEventListener('DOMContentLoaded', function() {    
-            if (typeof pdfjsLib === 'undefined') {    
-                alert('PDF.js failed to load!');    
-                return;    
-            }    
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';    
-        });    
-    </script>    
-    <style>    
-        body { font-family: Arial, sans-serif; padding: 2em; }    
-        input[type="file"] { margin-bottom: 1em; }    
-        pre { background: #f3f3f3; padding: 1em; border-radius: 5px; }    
-    </style>    
-</head>    
-<body>    
-    <h2>Extract Customer Code from PDF Invoice</h2>    
-    <input type="file" id="file-input" accept="application/pdf" />    
-    <pre id="output">Please select a PDF invoice file.</pre>    
-    
-    <script>    
-    document.addEventListener('DOMContentLoaded', function() {    
-        const fileInput = document.getElementById('file-input');    
-        const output = document.getElementById('output');    
-    
-        fileInput.addEventListener('change', function(event) {    
-            output.textContent = "Processing...";    
-            const file = event.target.files[0];    
-            if (!file) {    
-                output.textContent = "No file selected.";    
-                return;    
-            }    
-    
-            const reader = new FileReader();    
-            reader.onload = async function() {    
-                try {    
-                    const typedarray = new Uint8Array(reader.result);    
-                    if (typeof pdfjsLib === 'undefined') {    
-                        output.textContent = "PDF.js library not loaded.";    
-                        return;    
-                    }    
-                    const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;    
-                    let fullText = '';    
-                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {    
-                        const page = await pdf.getPage(pageNum);    
-                        const content = await page.getTextContent();    
-                        const pageText = content.items.map(item => item.str).join(' ');    
-                        fullText += pageText + '\n';    
-                    }    
-    
-                    // If you want to debug and see the full extracted text, uncomment below:    
-                    // output.textContent = fullText;    
-    
-                    // Robust regex to match "Customer Code" followed by spaces, colon, dash and the number    
-                    const match = fullText.match(/Customer\s*Code[\s:\-]*([0-9]+)/i);    
-                    if (match) {    
-                        output.textContent = "Customer Code: " + match[1];    
-                    } else {    
-                        output.textContent = "Customer Code not found.";    
-                    }    
-                } catch (err) {    
-                    output.textContent = "Error while processing PDF: " + err.message;    
-                }    
-            };    
-            reader.onerror = function(e) {    
-                output.textContent = "Error reading file: " + e.message;    
-            };    
-            reader.readAsArrayBuffer(file);    
-        });    
-    });    
-    </script>    
-</body>    
-v3
-</html>    
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Extract Customer Code</title>
+  https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js
+  https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+    }
+    input, button {
+      margin: 10px 0;
+    }
+    #output {
+      white-space: pre-wrap;
+      background: #f4f4f4;
+      padding: 10px;
+      border: 1px solid #ccc;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Upload Image or PDF to Extract Customer Code</h2>
+  <input type="file" id="fileInput" accept=".pdf,image/*" />
+  <button onclick="processFile()">Extract</button>
+
+  <div id="output">Waiting for file...</div>
+
+  <script>
+    async function processFile() {
+      const file = document.getElementById('fileInput').files[0];
+      const output = document.getElementById('output');
+      if (!file) {
+        output.textContent = "Please upload a file.";
+        return;
+      }
+
+      output.textContent = "Processing...";
+
+      try {
+        let text = '';
+        if (file.type === "application/pdf") {
+          text = await extractTextFromPDF(file);
+        } else if (file.type.startsWith("image/")) {
+          text = await extractTextFromImage(file);
+        } else {
+          output.textContent = "Unsupported file type.";
+          return;
+        }
+
+        const code = extractCustomerCode(text);
+        output.textContent = code ? `✅ Customer Code Found:\n${code}` : "❌ No customer code found.";
+      } catch (err) {
+        output.textContent = "Error processing file: " + err.message;
+      }
+    }
+
+    function extractCustomerCode(text) {
+      // Adjust this regex to match your customer code format
+      const match = text.match(/CUST-\d{6}/i);
+      return match ? match[0] : null;
+    }
+
+    async function extractTextFromImage(file) {
+      const image = URL.createObjectURL(file);
+      const result = await Tesseract.recognize(image, 'eng');
+      return result.data.text;
+    }
+
+    async function extractTextFromPDF(file) {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        const strings = content.items.map(item => item.str);
+        fullText += strings.join(' ') + '\n';
+      }
+      return fullText;
+    }
+  </script>
+</body>
+v5
+</html>
