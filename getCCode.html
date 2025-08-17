@@ -2,8 +2,13 @@
 <html lang="en">    
 <head>    
     <meta charset="UTF-8">    
-    <title>Extract Customer ID from PDF</title>    
+    <title>Extract Customer Code from PDF</title>    
+    <!-- PDF.js from CDN -->    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>    
+    <script>    
+        // Set the workerSrc to silence PDF.js warnings    
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';    
+    </script>    
 </head>    
 <body>    
     <h2>Extract Customer Code from PDF</h2>    
@@ -36,13 +41,19 @@
                             fullText += pageText + '\n';    
                         }    
     
-                        // Flexible regex for Customer Code immediately followed by number    
-                        const match = fullText.match(/Customer\s*Code\s*[:\-]?\s*([0-9]+)/i);    
+                        // For debugging: show the whole extracted text    
+                        output.textContent = fullText;    
+    
+                        // After you see the text and confirm how "Customer Code" appears,     
+                        // replace the above line with the below to extract the code:    
+                        /*    
+                        const match = fullText.match(/Customer\s*Code[\s:\-]*([0-9]+)/i);    
                         if (match) {    
                             output.textContent = "Customer ID: " + match[1];    
                         } else {    
                             output.textContent = "Customer ID not found.";    
                         }    
+                        */    
                     } catch (err) {    
                         output.textContent = "Error processing PDF: " + err.message;    
                     }    
@@ -52,4 +63,5 @@
         };    
     </script>    
 </body>    
+V1
 </html>    
