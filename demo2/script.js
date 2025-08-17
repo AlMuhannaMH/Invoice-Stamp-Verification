@@ -196,19 +196,15 @@ btnCheck.addEventListener('click', async () => {
         const uploadedImage = await loadImage(uploadedImageFile);
         drawImageToCanvas(document.getElementById('canvasUp'), uploadedImage);
 
-        // Simulate PDF fetching and comparison
-        await simulatePDFComparison(pdfId);
+        // Fetch and compare with actual PDF
+        const similarity = await fetchAndComparePDF(pdfId);
         
         // Show results
         document.getElementById('result').classList.add('show');
         document.getElementById('score').classList.add('show');
-        document.getElementById('score').innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 8px; color: #4CAF50;">✅ PROCESSING COMPLETE</div>
-            <div>Stamp verification completed for ID: ${pdfId}</div>
-            <div style="font-size: 0.9em; margin-top: 6px; opacity: 0.8;">
-                Ready to share results
-            </div>
-        `;
+        
+        // Display comparison results
+        displayComparisonResults(pdfId, similarity);
         
         hasResults = true;
         updateShareButtons();
@@ -221,6 +217,36 @@ btnCheck.addEventListener('click', async () => {
         setLoading(false);
     }
 });
+
+function displayComparisonResults(pdfId, similarity) {
+    let statusText = '';
+    let statusColor = '';
+    
+    if (similarity >= 80) {
+        statusText = '✅ AUTHENTIC MATCH';
+        statusColor = '#4CAF50';
+    } else if (similarity >= 65) {
+        statusText = '⚠️ REQUIRES REVIEW';
+        statusColor = '#FF9800';
+    } else {
+        statusText = '❌ NO MATCH';
+        statusColor = '#F44336';
+    }
+    
+    document.getElementById('score').innerHTML = `
+        <div style="font-weight: bold; margin-bottom: 8px; color: ${statusColor};">${statusText}</div>
+        <div>Similarity: ${similarity}% for ID: ${pdfId}</div>
+        <div style="font-size: 0.9em; margin-top: 6px; opacity: 0.8;">
+            Threshold: 65% minimum, 80% authentic
+        </div>
+    `;
+    
+    document.getElementById('score').style.background = similarity >= 80 ? 
+        'rgba(76, 175, 80, 0.15)' : 
+        similarity >= 65 ? 
+        'rgba(255, 152, 0, 0.15)' : 
+        'rgba(244, 67, 54, 0.15)';
+}
 
 async function loadImage(file) {
     return new Promise((resolve, reject) => {
@@ -248,27 +274,82 @@ function drawImageToCanvas(canvas, image) {
     ctx.drawImage(image, 0, 0, width, height);
 }
 
-async function simulatePDFComparison(pdfId) {
-    // Simulate PDF loading and create a sample canvas
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            const pdfCanvas = document.getElementById('canvasPdf');
-            pdfCanvas.width = 300;
-            pdfCanvas.height = 200;
-            const ctx = pdfCanvas.getContext('2d');
-            
-            // Draw a sample stamp representation
-            ctx.fillStyle = '#f0f0f0';
-            ctx.fillRect(0, 0, 300, 200);
-            ctx.fillStyle = '#333';
-            ctx.font = '16px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText(`PDF Stamp for: ${pdfId}`, 150, 100);
-            ctx.fillText('(Simulated)', 150, 130);
-            
-            resolve();
-        }, 1000);
-    });
+async function fetchAndComparePDF(pdfId) {
+    try {
+        // Fetch PDF from actual API
+        const apiUrl = `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${pdfId}`;
+        updateStatus(`Fetching PDF for ID: ${pdfId}...`, 'info');
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error(`PDF not found for ID: ${pdfId}. Please verify the customer code.`);
+            } else if (response.status === 500) {
+                throw new Error('Server error occurred. Please try again later.');
+            } else {
+                throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+            }
+        }
+        
+        const pdfData = await response.arrayBuffer();
+        updateStatus('Processing PDF...', 'info');
+        
+        // Render PDF to canvas
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2 });
+        
+        const pdfCanvas = document.getElementById('canvasPdf');
+        pdfCanvas.width = viewport.width;
+        pdfCanvas.height = viewport.height;
+        
+        await page.render({
+            canvasContext: pdfCanvas.getContext('2d'),
+            viewport: viewport
+        }).promise;
+        
+        // Perform actual comparison
+        updateStatus('Comparing images...', 'info');
+        const similarity = await performImageComparison();
+        
+        return similarity;
+        
+    } catch (error) {
+        throw error;
+    }
+}
+
+async function performImageComparison() {
+    try {
+        const uploadCanvas = document.getElementById('canvasUp');
+        const pdfCanvas = document.getElementById('canvasPdf');
+        
+        // Convert canvases to OpenCV matrices
+        let srcPdf = cv.imread(pdfCanvas);
+        let srcUp = cv.imread(uploadCanvas);
+        
+        // Convert to grayscale
+        cv.cvtColor(srcPdf, srcPdf, cv.COLOR_RGBA2GRAY);
+        cv.cvtColor(srcUp, srcUp, cv.COLOR_RGBA2GRAY);
+        
+        // Template matching
+        let result = new cv.Mat();
+        cv.matchTemplate(srcPdf, srcUp, result, cv.TM_CCOEFF_NORMED);
+        
+        const { maxVal } = cv.minMaxLoc(result);
+        const similarity = Math.round(maxVal * 100);
+        
+        // Cleanup
+        srcPdf.delete();
+        srcUp.delete();
+        result.delete();
+        
+        return Math.max(0, similarity);
+        
+    } catch (error) {
+        console.error('Comparison error:', error);
+        return 0;
+    }
 }
 
 function setLoading(isLoading) {
