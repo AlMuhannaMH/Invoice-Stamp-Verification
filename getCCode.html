@@ -1,99 +1,278 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Extract Customer Code from Invoice</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        #result { margin-top: 20px; font-weight: bold; }
-        #fileInput { margin-bottom: 10px; }
-    </style>
-</head>
-<body>
-    <h2>Upload Invoice (PDF or Image)</h2>
-    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg">
-    <div id="result"></div>
-
-    <script>
-        document.getElementById('fileInput').addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const resultDiv = document.getElementById('result');
-            resultDiv.textContent = "Processing...";
-
-            if (file.type === 'application/pdf') {
-                extractTextFromPDF(file);
-            } else {
-                extractTextFromImage(file);
-            }
-        });
-
-        // Extract text from PDF
-        async function extractTextFromPDF(file) {
-            const pdfjsLib = window['pdfjs-dist/build/pdf'];
-            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js';
-
-            try {
-                const arrayBuffer = await file.arrayBuffer();
-                const loadingTask = pdfjsLib.getDocument(arrayBuffer);
-                const pdf = await loadingTask.promise;
-
-                let fullText = '';
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    fullText += textContent.items.map(item => item.str).join(' ');
-                }
-
-                const customerCode = extractCustomerCode(fullText);
-                displayResult(customerCode);
-            } catch (error) {
-                document.getElementById('result').textContent = "Error reading PDF: " + error.message;
-            }
-        }
-
-        // Extract text from image (OCR)
-        async function extractTextFromImage(file) {
-            try {
-                const { data: { text } } = await Tesseract.recognize(file, 'eng+ara'); // Supports Arabic
-                const customerCode = extractCustomerCode(text);
-                displayResult(customerCode);
-            } catch (error) {
-                document.getElementById('result').textContent = "Error processing image: " + error.message;
-            }
-        }
-
-        // Improved regex to match Customer Code
-        function extractCustomerCode(text) {
-            // Try English pattern first: "Customer Code" followed by numbers
-            let match = text.match(/Customer Code\s*(\d+)/i);
-            if (match) return match[1];
-
-            // Try Arabic pattern: "رمز العميل" followed by numbers
-            match = text.match(/رمز العميل\s*(\d+)/);
-            if (match) return match[1];
-
-            // Fallback: Search for a 8-digit number near "Code" or "رمز"
-            match = text.match(/(Code|رمز)[\s:]*(\d{8})/i);
-            if (match) return match[2];
-
-            return "Not found (check console for raw text)";
-        }
-
-        // Display result
-        function displayResult(customerCode) {
-            const resultDiv = document.getElementById('result');
-            if (customerCode === "Not found (check console for raw text)") {
-                resultDiv.innerHTML = `Customer Code: <span style="color: red;">${customerCode}</span>`;
-                console.log("Raw extracted text:", text); // Debugging
-            } else {
-                resultDiv.innerHTML = `Customer Code: <span style="color: green;">${customerCode}</span>`;
-            }
-        }
-    </script>
-</body>
-</html>
+<!DOCTYPE html>    
+<html lang="en">    
+<head>    
+  <meta charset="UTF-8" />    
+  <title>Stamp Match Checker</title>    
+</head>    
+<style>
+    * {    
+  box-sizing: border-box;    
+  margin: 0;    
+  padding: 0;    
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;    
+}    
+    
+body {    
+  background: #f5f7fa;    
+  color: #333;    
+  min-height: 100vh;    
+  padding: 20px;    
+  max-width: 100%;    
+}    
+    
+.container {    
+  max-width: 540px;    
+  margin: 0 auto;    
+  background: #fff;    
+  border-radius: 20px;    
+  box-shadow: 0 5px 25px rgba(0,0,0,0.1);    
+  overflow: hidden;    
+}    
+    
+header {    
+  background: #4285f4;    
+  color: #fff;    
+  text-align: center;    
+  padding: 28px 20px 18px 20px;    
+}    
+    
+header h1 {    
+  font-size: 1.5rem;    
+  font-weight: 700;    
+  margin-bottom: 6px;    
+}    
+    
+header p {    
+  font-size: 1rem;    
+  opacity: 0.93;    
+  font-weight: 400;    
+}    
+    
+.main-content {    
+  padding: 30px 22px 24px 22px;    
+}    
+    
+.input-section {    
+  margin-bottom: 32px;    
+}    
+    
+.form-group {    
+  margin-bottom: 18px;    
+  background: #f8f9fa;    
+  border-radius: 12px;    
+  border: 1px solid #e8eaed;    
+  padding: 16px 14px 10px 14px;    
+}    
+    
+label {    
+  display: block;    
+  margin-bottom: 8px;    
+  font-weight: 600;    
+  color: #5f6368;    
+  font-size: 15px;    
+}    
+    
+input[type="text"],    
+input[type="file"] {    
+  display: block;    
+  width: 100%;    
+  padding: 11px;    
+  font-size: 16px;    
+  border: 1px solid #dadce0;    
+  border-radius: 8px;    
+  margin-top: 2px;    
+  transition: border-color 0.3s;    
+  background: #fff;    
+}    
+    
+input[type="text"]:focus,    
+input[type="file"]:focus {    
+  outline: none;    
+  border-color: #4285f4;    
+  box-shadow: 0 0 0 2px rgba(66,133,244,0.12);    
+}    
+    
+/* Buttons */    
+.btn {    
+  padding: 15px 0;    
+  border-radius: 12px;    
+  width: 100%;    
+  font-size: 1.1rem;    
+  font-weight: 600;    
+  border: none;    
+  cursor: pointer;    
+  transition: background 0.23s, transform 0.16s;    
+  margin-top: 6px;    
+  margin-bottom: 10px;    
+  display: block;    
+}    
+    
+.btn-primary {    
+  background: #4285f4;    
+  color: #fff;    
+  box-shadow: 0 4px 10px rgba(66,133,244,0.16);    
+}    
+    
+.btn-secondary {    
+  background: #f1f3f4;    
+  color: #5f6368;    
+  box-shadow: none;    
+}    
+    
+.btn:hover {    
+  transform: translateY(-2px);    
+}    
+    
+.btn:active {    
+  transform: translateY(0);    
+}    
+    
+button:disabled,    
+.btn:disabled {    
+  opacity: 0.7;    
+  cursor: not-allowed;    
+}    
+    
+/* Result Area */    
+#result {    
+  display: flex;    
+  gap: 20px;    
+  margin-top: 1.5rem;    
+  justify-content: center;    
+  align-items: flex-start;    
+  flex-wrap: wrap;    
+}    
+    
+.canvas-container {    
+  background: #f8f9fa;    
+  border-radius: 14px;    
+  padding: 18px 10px 14px 10px;    
+  box-shadow: 0 3px 12px rgba(0,0,0,0.07);    
+  border: 1px solid #e8eaed;    
+  min-width: 175px;    
+  text-align: center;    
+}    
+    
+.canvas-container h2 {    
+  margin-bottom: 12px;    
+  font-size: 1.07rem;    
+  color: #5f6368;    
+  font-weight: 600;    
+}    
+    
+.canvas-container canvas {    
+  border: 1.5px solid #dadce0;    
+  border-radius: 10px;    
+  background: #fff;    
+  box-shadow: 0 3px 10px rgba(0,0,0,0.09);    
+  max-width: 170px;    
+  max-height: 170px;    
+  margin: 0 auto;    
+  display: block;    
+}    
+    
+#score {    
+  margin-top: 22px;    
+  padding: 13px;    
+  border-radius: 10px;    
+  font-size: 1.1rem;    
+  color: #333;    
+  font-weight: 600;    
+  background: #e8f0fe;    
+  text-align: center;    
+  min-height: 24px;    
+  transition: background 0.3s, color 0.3s;    
+  border: 1px solid #dadce0;    
+  box-shadow: 0 2px 8px rgba(66,133,244,0.08);    
+}    
+    
+@media (max-width: 600px) {    
+  .container {    
+    border-radius: 12px;    
+    box-shadow: 0 3px 14px rgba(0,0,0,0.10);    
+  }    
+  .main-content {    
+    padding: 20px 8px 18px 8px;    
+  }    
+  #result {    
+    flex-direction: column;    
+    gap: 12px;    
+    align-items: stretch;    
+  }    
+  .canvas-container {    
+    min-width: 0;    
+    width: 100%;    
+    padding: 14px 6px 10px 6px;    
+  }    
+}    
+    
+@media (max-width: 420px) {    
+  .main-content {    
+    padding: 9px 2px 10px 2px;    
+  }    
+  header {    
+    padding: 16px 4px 10px 4px;    
+  }    
+  header h1 {    
+    font-size: 1.15rem;    
+  }    
+}    
+</style>
+<body>    
+  <div class="container">    
+    <header>    
+      <h1>Stamp Match Checker</h1>    
+      <p>Compare your uploaded image with the PDF stamp</p>    
+    </header>    
+    
+    <div class="main-content">    
+      <div class="input-section">    
+        <div class="form-group">    
+          <label for="pdfId">PDF ID:</label>    
+          <input id="pdfId" type="text" placeholder="e.g. 96600001" />    
+        </div>    
+    
+        <div class="form-group">    
+          <label for="fileInput">Upload Image:</label>    
+          <input id="fileInput" type="file" accept="image/*" />    
+        </div>    
+    
+        <!-- Three Actions: Upload (fileInput), Check (btnCheck), Share (btnShare) -->    
+        <button id="btnCheck" class="btn btn-primary" disabled>Check Match</button>    
+        <button id="btnShare" class="btn btn-secondary" disabled>Share Result</button>    
+      </div>    
+    
+      <div id="result">    
+        <div class="canvas-container">    
+          <h2>PDF Stamp</h2>    
+          <canvas id="canvasPdf"></canvas>    
+        </div>    
+        <div class="canvas-container">    
+          <h2>Your Image</h2>    
+          <canvas id="canvasUp"></canvas>    
+        </div>    
+      </div>    
+    
+      <p id="score"></p>    
+    </div>    
+  </div>    
+    
+  <!-- PDF.js -->    
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>    
+  <script>    
+    pdfjsLib.GlobalWorkerOptions.workerSrc =    
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';    
+  </script>    
+  <!-- OpenCV.js -->    
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>    
+  <script>    
+    cv['onRuntimeInitialized'] = () => {    
+      document.getElementById('btnCheck').disabled = false;    
+      // Dynamically load your main logic after OpenCV is ready    
+      const s = document.createElement('script');    
+      s.src = 'script.js';    
+      document.body.append(s);    
+    };    
+  </script>    
+</body>    
+</html>    
