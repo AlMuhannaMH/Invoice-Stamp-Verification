@@ -3,7 +3,6 @@
 <head>    
     <meta charset="UTF-8">    
     <title>Extract Customer ID from PDF</title>    
-    <!-- PDF.js from CDN -->    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>    
 </head>    
 <body>    
@@ -12,7 +11,6 @@
     <pre id="output"></pre>    
     
     <script>    
-        // Wait for PDF.js to load    
         window.onload = function() {    
             const fileInput = document.getElementById('file-input');    
             const output = document.getElementById('output');    
@@ -38,8 +36,8 @@
                             fullText += pageText + '\n';    
                         }    
     
-                        // Try to extract Customer Code    
-                        const match = fullText.match(/Customer Code\s*(\d+)/);    
+                        // Flexible regex for Customer Code immediately followed by number    
+                        const match = fullText.match(/Customer\s*Code\s*[:\-]?\s*([0-9]+)/i);    
                         if (match) {    
                             output.textContent = "Customer ID: " + match[1];    
                         } else {    
