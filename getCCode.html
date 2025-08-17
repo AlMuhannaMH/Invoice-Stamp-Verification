@@ -3,11 +3,15 @@
 <head>    
     <meta charset="UTF-8">    
     <title>Extract Customer Code from PDF</title>    
-    <!-- PDF.js from CDN -->    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>    
     <script>    
-        // Set the workerSrc to silence PDF.js warnings    
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';    
+        window.addEventListener('DOMContentLoaded', function() {    
+            if (typeof pdfjsLib === 'undefined') {    
+                alert('PDF.js failed to load.');    
+                return;    
+            }    
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';    
+        });    
     </script>    
 </head>    
 <body>    
@@ -16,36 +20,38 @@
     <pre id="output"></pre>    
     
     <script>    
-        window.onload = function() {    
-            const fileInput = document.getElementById('file-input');    
-            const output = document.getElementById('output');    
+    document.addEventListener('DOMContentLoaded', function() {    
+        const fileInput = document.getElementById('file-input');    
+        const output = document.getElementById('output');    
     
-            fileInput.addEventListener('change', async function(event) {    
-                const file = event.target.files[0];    
-                if (!file) {    
-                    output.textContent = "No file selected.";    
-                    return;    
-                }    
+        fileInput.addEventListener('change', async function(event) {    
+            output.textContent = "Processing...";    
+            const file = event.target.files[0];    
+            if (!file) {    
+                output.textContent = "No file selected.";    
+                return;    
+            }    
     
+            try {    
                 const reader = new FileReader();    
                 reader.onload = async function() {    
-                    const typedarray = new Uint8Array(reader.result);    
                     try {    
+                        const typedarray = new Uint8Array(reader.result);    
+                        if (typeof pdfjsLib === 'undefined') {    
+                            output.textContent = "pdfjsLib is not loaded.";    
+                            return;    
+                        }    
                         const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;    
                         let fullText = '';    
-    
                         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {    
                             const page = await pdf.getPage(pageNum);    
                             const content = await page.getTextContent();    
                             const pageText = content.items.map(item => item.str).join(' ');    
                             fullText += pageText + '\n';    
                         }    
-    
-                        // For debugging: show the whole extracted text    
-                        output.textContent = fullText;    
-    
-                        // After you see the text and confirm how "Customer Code" appears,     
-                        // replace the above line with the below to extract the code:    
+                        // Show the full text for debugging    
+                        output.textContent = fullText ? fullText : "[No text extracted from PDF.]";    
+                        // Uncomment to enable regex extraction after verifying format    
                         /*    
                         const match = fullText.match(/Customer\s*Code[\s:\-]*([0-9]+)/i);    
                         if (match) {    
@@ -54,14 +60,20 @@
                             output.textContent = "Customer ID not found.";    
                         }    
                         */    
-                    } catch (err) {    
-                        output.textContent = "Error processing PDF: " + err.message;    
+                    } catch (err2) {    
+                        output.textContent = "Error while processing PDF: " + err2.message;    
                     }    
                 };    
+                reader.onerror = function(e) {    
+                    output.textContent = "Error reading file: " + e.message;    
+                };    
                 reader.readAsArrayBuffer(file);    
-            });    
-        };    
+            } catch (err) {    
+                output.textContent = "Unexpected error: " + err.message;    
+            }    
+        });    
+    });    
     </script>    
 </body>    
-V1
+v2
 </html>    
