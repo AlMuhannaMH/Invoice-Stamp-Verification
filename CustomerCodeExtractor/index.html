@@ -176,15 +176,11 @@
                 <button class="btn" onclick="document.getElementById('fileInput').click()">
                     📁 Upload File
                 </button>
-                <button class="btn btn-secondary" onclick="document.getElementById('cameraInput').click()">
-                    📷 Take Photo
-                </button>
             </div>
             <p style="color: #666; font-size: 14px;">Supports images (JPG, PNG) and PDF files</p>
         </div>
 
-        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" multiple>
-        <input type="file" id="cameraInput" class="file-input" accept="image/*" capture="environment">
+        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" multiple capture="environment">
 
         <div class="progress" id="progressDiv">
             <div class="progress-bar">
@@ -234,11 +230,6 @@
 
         // File input handlers
         fileInput.addEventListener('change', (e) => {
-            const files = Array.from(e.target.files);
-            processFiles(files);
-        });
-
-        cameraInput.addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             processFiles(files);
         });
@@ -317,12 +308,13 @@
                         for (let i = 1; i <= pdf.numPages; i++) {
                             const page = await pdf.getPage(i);
                             const content = await page.getTextContent();
-                            const pageText = content.items.map(item => item.str).join(' ');
-                            fullText += pageText + ' ';
+                            const pageText = content.items.map(item => item.str).join('');
+                            fullText += pageText + '\n';
                             
                             updateProgress((i / pdf.numPages) * 100, `Reading PDF page ${i}/${pdf.numPages}...`);
                         }
 
+                        console.log('Extracted PDF text:', fullText);
                         resolve(fullText);
                     } catch (error) {
                         reject(error);
@@ -334,9 +326,23 @@
         }
 
         function extractCustomerCodes(text) {
-            const regex = /966\d{5}/g;
-            const matches = text.match(regex);
-            return matches ? [...new Set(matches)] : [];
+            // Clean the text and try multiple regex patterns
+            const cleanText = text.replace(/\s+/g, '').replace(/[^\d]/g, '');
+            console.log('Cleaned text for number extraction:', cleanText);
+            
+            // Primary pattern: 966 followed by exactly 5 digits
+            const regex1 = /966\d{5}/g;
+            let matches = text.match(regex1) || [];
+            
+            // Secondary pattern: look in cleaned numeric string
+            const regex2 = /966\d{5}/g;
+            const cleanMatches = cleanText.match(regex2) || [];
+            
+            // Combine and deduplicate
+            const allMatches = [...matches, ...cleanMatches];
+            console.log('Found matches:', allMatches);
+            
+            return allMatches.length ? [...new Set(allMatches)] : [];
         }
 
         function showProgress() {
