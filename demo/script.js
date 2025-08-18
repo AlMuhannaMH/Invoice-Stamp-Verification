@@ -21,11 +21,45 @@ const btnCheck = document.getElementById('btnCheck');
 const shareBtn = document.getElementById('shareBtn');
 const downloadBtn = document.getElementById('downloadBtn');
 
-// Initialize OpenCV
-cv['onRuntimeInitialized'] = () => {
-    console.log('OpenCV.js is ready');
-    isOpenCVReady = true;
-};
+// Initialize OpenCV with better loading detection
+function initializeOpenCV() {
+    if (typeof cv !== 'undefined' && cv.Mat) {
+        console.log('OpenCV.js is ready');
+        isOpenCVReady = true;
+        return;
+    }
+    
+    // Set up the callback for when OpenCV loads
+    if (typeof cv !== 'undefined') {
+        cv['onRuntimeInitialized'] = () => {
+            console.log('OpenCV.js is ready via callback');
+            isOpenCVReady = true;
+        };
+    }
+    
+    // Also check periodically if OpenCV is available
+    const checkOpenCV = setInterval(() => {
+        if (typeof cv !== 'undefined' && cv.Mat) {
+            console.log('OpenCV.js detected via polling');
+            isOpenCVReady = true;
+            clearInterval(checkOpenCV);
+        }
+    }, 500);
+    
+    // Stop checking after 30 seconds
+    setTimeout(() => {
+        clearInterval(checkOpenCV);
+        if (!isOpenCVReady) {
+            console.warn('OpenCV.js failed to load within 30 seconds');
+        }
+    }, 30000);
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', initializeOpenCV);
+
+// Also try to initialize immediately
+initializeOpenCV();
 
 // Drag and drop functionality
 uploadArea.addEventListener('dragover', (e) => {
@@ -195,8 +229,9 @@ btnCheck.addEventListener('click', async () => {
     }
 
     if (!isOpenCVReady) {
-        showError('OpenCV is still loading. Please wait a moment and try again.');
-        return;
+        // Try to proceed without OpenCV for basic comparison
+        console.warn('OpenCV not ready, proceeding with basic comparison');
+        updateStatus('OpenCV not ready, using basic comparison...', 'info');
     }
 
     setLoading(true);
@@ -227,7 +262,7 @@ btnCheck.addEventListener('click', async () => {
         // Step 3: Draw PDF stamp to canvas
         drawImageToCanvas(document.getElementById('canvasPdf'), pdfStampImage);
 
-        // Step 4: Compare images using OpenCV
+        // Step 4: Compare images using OpenCV or basic method
         updateStatus('Comparing stamp images...', 'info');
         let comparisonResult;
         
@@ -246,7 +281,11 @@ btnCheck.addEventListener('click', async () => {
                 isFallback: true,
                 message: 'Comparison performed using fallback method due to CORS restrictions'
             };
+        } else if (!isOpenCVReady) {
+            // Use basic comparison without OpenCV
+            comparisonResult = await performBasicComparison(uploadedImage, pdfStampImage);
         } else {
+            // Use full OpenCV comparison
             comparisonResult = await compareStampImages(uploadedImage, pdfStampImage);
         }
         
@@ -483,6 +522,85 @@ function createFallbackStampImage(pdfUrl) {
     });
 }
 
+async function performBasicComparison(uploadedImg, pdfImg) {
+    try {
+        // Get canvases for comparison
+        const uploadedCanvas = document.getElementById('canvasUp');
+        const pdfCanvas = document.getElementById('canvasPdf');
+        
+        const uploadedCtx = uploadedCanvas.getContext('2d');
+        const pdfCtx = pdfCanvas.getContext('2d');
+        
+        // Get image data
+        const uploadedData = uploadedCtx.getImageData(0, 0, uploadedCanvas.width, uploadedCanvas.height);
+        const pdfData = pdfCtx.getImageData(0, 0, pdfCanvas.width, pdfCanvas.height);
+        
+        // Calculate basic pixel difference
+        let totalDiff = 0;
+        let pixelCount = 0;
+        const minLength = Math.min(uploadedData.data.length, pdfData.data.length);
+        
+        for (let i = 0; i < minLength; i += 4) {
+            const rDiff = Math.abs(uploadedData.data[i] - pdfData.data[i]);
+            const gDiff = Math.abs(uploadedData.data[i + 1] - pdfData.data[i + 1]);
+            const bDiff = Math.abs(uploadedData.data[i + 2] - pdfData.data[i + 2]);
+            
+            totalDiff += (rDiff + gDiff + bDiff) / 3;
+            pixelCount++;
+        }
+        
+        const averageDiff = totalDiff / pixelCount;
+        const similarity = 1 - (averageDiff / 255);
+        
+        // Calculate color histogram similarity (basic)
+        const uploadedHist = calculateBasicHistogram(uploadedData);
+        const pdfHist = calculateBasicHistogram(pdfData);
+        const histSimilarity = calculateHistogramSimilarity(uploadedHist, pdfHist);
+        
+        // Combine metrics
+        const overallScore = (similarity * 0.6) + (histSimilarity * 0.4);
+        
+        return {
+            overallScore: Math.max(0, Math.min(1, overallScore)),
+            correlation: histSimilarity,
+            structuralSimilarity: similarity,
+            featureMatches: 0,
+            isMatch: overallScore > 0.6,
+            isBasic: true,
+            message: 'Basic comparison performed (OpenCV not available)'
+        };
+        
+    } catch (error) {
+        console.error('Error in basic comparison:', error);
+        return {
+            overallScore: 0.5,
+            correlation: 0.5,
+            structuralSimilarity: 0.5,
+            featureMatches: 0,
+            isMatch: false,
+            isBasic: true,
+            error: 'Basic comparison failed',
+            message: 'Fallback comparison performed'
+        };
+    }
+}
+
+function calculateBasicHistogram(imageData) {
+    const hist = new Array(256).fill(0);
+    
+    for (let i = 0; i < imageData.data.length; i += 4) {
+        // Convert to grayscale
+        const gray = Math.round(
+            0.299 * imageData.data[i] +     // R
+            0.587 * imageData.data[i + 1] + // G
+            0.114 * imageData.data[i + 2]   // B
+        );
+        hist[gray]++;
+    }
+    
+    return hist;
+}
+
 async function compareStampImages(uploadedImg, pdfImg) {
     try {
         // Convert images to OpenCV format
@@ -605,6 +723,8 @@ function displayComparisonResults(result, pdfId) {
     let additionalInfo = '';
     if (result.isFallback) {
         additionalInfo = `<div style="color: #ff9800; margin-top: 8px; font-size: 0.85em;">⚠️ ${result.message}</div>`;
+    } else if (result.isBasic) {
+        additionalInfo = `<div style="color: #2196F3; margin-top: 8px; font-size: 0.85em;">ℹ️ ${result.message}</div>`;
     }
     
     document.getElementById('score').innerHTML = `
