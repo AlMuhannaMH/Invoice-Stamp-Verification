@@ -1,60 +1,104 @@
-<!DOCTYPE html>    
-<html lang="en">    
-<head>    
-  <meta charset="UTF-8" />    
-  <title>Stamp Match Checker</title>    
-  <link rel="stylesheet" href="style.css" />    
-</head>    
-<body>    
-  <h1>Stamp Match Checker</h1>    
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stamp Match Checker - Auto Extract</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container" id="screenshot-target">
+        <header>
+            <h1>🔍 Smart Stamp Match Checker</h1>
+            <p>Upload → Extract → Verify → Share</p>
+        </header>
+        
+        <div class="main-content">
+            <!-- Step 1: Upload and Extract -->
+            <div class="step">
+                <div class="step-number">1</div>
+                <h3>📤 Upload File</h3>
+                <div class="upload-area" id="uploadArea">
+                    <div style="font-size: 3em; margin-bottom: 15px;">📁</div>
+                    <button class="btn" onclick="document.getElementById('fileInput').click()">
+                        Choose File or Take Photo
+                    </button>
+                    <p style="color: #666; font-size: 14px; margin-top: 15px;">
+                        Supports images (JPG, PNG) and PDF files
+                    </p>
+                </div>
+                <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
+                
+                <div class="progress" id="progressDiv">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Processing...</div>
+                </div>
+                
+                <div class="error" id="errorDiv"></div>
+                
+                <div class="extracted-codes" id="extractedCodesDiv">
+                    <h3>✅ Extracted Customer Codes:</h3>
+                    <div id="codesList"></div>
+                </div>
+            </div>
+
+            <!-- Step 2: PDF ID Selection -->
+            <div class="step">
+                <div class="step-number">2</div>
+                <h3>🎯 Select PDF ID</h3>
+                <div class="pdf-id-section">
+                    <label for="pdfId">📄 PDF ID (Customer Code):</label>
+                    <input id="pdfId" type="text" placeholder="966XXXXX - Select from extracted codes above" readonly />
+                    <p style="color: #666; font-size: 14px; margin-top: 10px;">
+                        The customer code will be automatically filled from the extracted codes above
+                    </p>
+                </div>
+            </div>
+
+            <!-- Step 3: Check Match -->
+            <div class="step">
+                <div class="step-number">3</div>
+                <h3>🔍 Check Match</h3>
+                <button id="btnCheck" class="btn" disabled>🔍 Verify Stamp Match</button>
+                <p style="color: #666; font-size: 14px; margin-top: 10px;">
+                    Compare your uploaded image with the official PDF stamp
+                </p>
+            </div>
+
+            <!-- Step 4: Results and Share -->
+            <div class="step">
+                <div class="step-number">4</div>
+                <h3>📱 Results & Share</h3>
+                <button class="btn btn-secondary" onclick="captureAndShare()" id="shareBtn" disabled>📱 Share Results</button>
+                <button class="btn btn-warning" onclick="captureAndDownload()" id="downloadBtn" disabled>💾 Download Results</button>
+                <p style="color: #666; font-size: 14px; margin-top: 10px;">
+                    Share or download the verification results
+                </p>
+            </div>
+            
+            <!-- Comparison Results -->
+            <div id="result">
+                <div class="canvas-container">
+                    <h2>📄 PDF Stamp</h2>
+                    <canvas id="canvasPdf"></canvas>
+                </div>
+                <div class="canvas-container">
+                    <h2>🖼️ Your Image</h2>
+                    <canvas id="canvasUp"></canvas>
+                </div>
+            </div>
+            
+            <div id="score"></div>
+            <div id="status" class="status"></div>
+        </div>
+    </div>
     
-  <label>    
-    PDF ID:    
-    <input id="pdfId" type="text" placeholder="e.g. 96600001" />    
-  </label>    
-    
-  <label>    
-    Upload Image:    
-    <input id="fileInput" type="file" accept="image/*" />    
-  </label>    
-    
-  <!-- Disabled until OpenCV is ready -->    
-  <button id="btnCheck" disabled>Check Match</button>    
-    
-  <div id="result">    
-    <div class="canvas-container">    
-      <h2>PDF Stamp</h2>    
-      <canvas id="canvasPdf"></canvas>    
-    </div>    
-    <div class="canvas-container">    
-      <h2>Your Image</h2>    
-      <canvas id="canvasUp"></canvas>    
-    </div>    
-  </div>    
-    
-  <p id="score"></p>    
-    
-  <!-- 1) PDF.js + worker config -->    
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.min.js"></script>    
-  <script>    
-    pdfjsLib.GlobalWorkerOptions.workerSrc =    
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.14.305/pdf.worker.min.js';    
-  </script>    
-    
-  <!-- 2) Load OpenCV.js synchronously -->    
-  <script src="https://docs.opencv.org/4.x/opencv.js"></script>    
-    
-  <!-- 3) Hook into OpenCV ready and then load our main logic -->    
-  <script>    
-    cv['onRuntimeInitialized'] = () => {    
-      // Enable button only after cv is available    
-      document.getElementById('btnCheck').disabled = false;    
-    
-      // Dynamically load script.js so it runs _after_ cv is ready    
-      const s = document.createElement('script');    
-      s.src = 'script.js';    
-      document.body.append(s);    
-    };    
-  </script>    
-</body>    
-</html>    
+    <script src="script.js"></script>
+</body>
+</html>
