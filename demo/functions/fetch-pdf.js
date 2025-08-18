@@ -41,7 +41,7 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({ 
           error: "Missing parameter",
-          message: "Customer Code is required"
+          message: "PDF ID is required"
         })
       };
     }
@@ -54,7 +54,7 @@ exports.handler = async (event, context) => {
         headers,
         body: JSON.stringify({ 
           error: "Invalid ID format",
-          message: "Customer Code contains invalid characters or is too long"
+          message: "PDF ID contains invalid characters or is too long"
         })
       };
     }
