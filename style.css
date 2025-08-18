@@ -1,19 +1,18 @@
 * {
     margin: 0;
-    padding: 8px;
+    padding: 0;
     box-sizing: border-box;
 }
 
+/* Use padding for internal spacing */
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    min-height: 100vh;
     padding: 8px;
 }
 
 .container {
+    margin: 16px auto; /* vertical rhythm, centered horizontally */
+    padding: 8px;
     max-width: 1200px;
-    margin: 0 auto;
     background: white;
     border-radius: 15px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
@@ -24,6 +23,7 @@ header {
     background: linear-gradient(135deg, #4CAF50, #45a049);
     color: white;
     padding: 8px;
+    margin-bottom: 8px;
     text-align: center;
 }
 
@@ -54,6 +54,7 @@ header p {
     border-radius: 10px;
     border-left: 5px solid #4CAF50;
     position: relative;
+    margin: 8px 0;
 }
 
 .step-number {
@@ -81,7 +82,7 @@ header p {
     border-radius: 15px;
     padding: 8px;
     text-align: center;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     transition: all 0.3s;
     cursor: pointer;
 }
@@ -174,7 +175,7 @@ header p {
     border: 1px solid #ddd;
     border-radius: 8px;
     padding: 8px;
-    margin: 10px 0;
+    margin: 8px 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -201,7 +202,7 @@ header p {
     background: #f8f9fa;
     padding: 8px;
     border-radius: 10px;
-    margin: 20px 0;
+    margin: 16px 0;
     border-left: 5px solid #2196F3;
 }
 
@@ -237,6 +238,7 @@ header p {
     padding: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     text-align: center;
+    margin-bottom: 8px;
 }
 
 .canvas-container h2 {
@@ -260,7 +262,7 @@ canvas {
     text-align: center;
     font-size: 1.2em;
     font-weight: 600;
-    margin: 20px 0;
+    margin: 16px 0;
     display: none;
 }
 
@@ -274,7 +276,7 @@ canvas {
     border: 1px solid #feb2b2;
     border-radius: 8px;
     padding: 8px;
-    margin: 10px 0;
+    margin: 8px 0;
     display: none;
 }
 
@@ -284,6 +286,7 @@ canvas {
     border-radius: 5px;
     display: none;
     text-align: center;
+    margin: 8px 0;
 }
 
 .status.success {
