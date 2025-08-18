@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://almuhannamh.app.n8n.cloud https://arlasfatest.danyaltd.com;">
+    <title>Invoice Stamp Verification</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 5px 25px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        header {
+            background: #4285f4;
+            color: white;
+            text-align: center;
+            padding: 25px 20px;
+        }
+        
+        header h1 {
+            font-size: 1.6rem;
+            margin-bottom: 5px;
+        }
+        
+        header p {
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 25px 20px;
+        }
+
+        .customer-id-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 1px solid #e8eaed;
+        }
+        
+        .customer-id-container label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #5f6368;
+            font-size: 14px;
+        }
+        
+        .customer-id-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #dadce0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .customer-id-input:focus {
+            outline: none;
+            border-color: #4285f4;
+            box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+        }
+        
+        .customer-id-help {
+            font-size: 12px;
+            color: #5f6368;
+            margin-top: 5px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .option-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .btn {
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            background: #4285f4;
+            color: white;
+            box-shadow: 0 4px 10px rgba(66, 133, 244, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #f1f3f4;
+            color: #5f6368;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .camera-container, .upload-container {
+            display: none;
+            margin-top: 20px;
+        }
+        
+        .camera-box {
+            position: relative;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+        
+        .camera-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .capture-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: white;
+            border: 5px solid #4285f4;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+        
+        .capture-inner {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #4285f4;
+        }
+        
+        .cancel-btn {
+            background: #ea4335;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        
+        .upload-box {
+            border: 2px dashed #dadce0;
+            border-radius: 15px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 20px 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .upload-box.active {
+            border-color: #4285f4;
+            background: #e8f0fe;
+        }
+        
+        .upload-box p {
+            color: #5f6368;
+            margin: 15px 0;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .upload-btn {
+            background: #4285f4;
+            color: white;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-weight: 600;
+            display: inline-block;
+            cursor: pointer;
+        }
+        
+        .results-container {
+            display: none;
+            margin-top: 25px;
+            padding-top: 25px;
+            border-top: 1px solid #eee;
+        }
+        
+        .status-box {
+            background: #e8f0fe;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .status-text {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .status-valid {
+            color: #34a853;
+        }
+        
+        .status-invalid {
+            color: #ea4335;
+        }
+        
+        .stamp-comparison {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+        }
+        
+        .stamp-box {
+            text-align: center;
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .stamp-box h3 {
+            margin-bottom: 10px;
+            color: #5f6368;
+        }
+        
+        .stamp-img {
+            width: 100%;
+            border-radius: 10px;
+            border: 1px solid #eee;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+        }
+
+        .pdf-link {
+            display: inline-block;
+            padding: 15px 20px;
+            background: #4285f4;
+            color: white;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            margin-top: 10px;
+            transition: background 0.3s ease;
+        }
+        
+        .pdf-link:hover {
+            background: #3367d6;
+        }
+
+        .processing-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 14px;
+            color: #5f6368;
+        }
+        
+        .new-verification {
+            background: #f1f3f4;
+            color: #5f6368;
+            border: none;
+            padding: 15px;
+            border-radius: 12px;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 30px;
+            cursor: pointer;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4285f4;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: #fce8e6;
+            color: #ea4335;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        @media (max-width: 480px) {
+            body {
+                padding: 15px;
+            }
+            
+            .container {
+                border-radius: 15px;
+            }
+            
+            header {
+                padding: 20px 15px;
+            }
+            
+            header h1 {
+                font-size: 1.4rem;
+            }
+            
+            .main-content {
+                padding: 20px 15px;
+            }
+            
+            .btn {
+                padding: 14px;
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Invoice Stamp Verification</h1>
+            <p>Verify your stamped invoice using camera or file upload</p>
+        </header>
+        
+        <div class="main-content">
+            <!-- Customer ID Input Section -->
+            <div class="customer-id-container">
+                <label for="customer-id-input">Customer ID (Optional)</label>
+                <input 
+                    type="text" 
+                    id="customer-id-input" 
+                    class="customer-id-input"
+                    placeholder="Enter customer ID (e.g., 96600001)"
+                    maxlength="20"
+                >
+                <div class="customer-id-help">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                    </svg>
+                    Leave empty to auto-detect from image
+                </div>
+            </div>
+
+            <div class="option-buttons">
+                <button id="camera-btn" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Take Photo
+                </button>
+                <button id="upload-btn" class="btn btn-secondary">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Upload Photo
+                </button>
+            </div>
+            
+            <div id="camera-container" class="camera-container">
+                <div class="camera-box">
+                    <video id="video" autoplay playsinline></video>
+                </div>
+                <div class="camera-controls">
+                    <div id="capture-btn" class="capture-btn">
+                        <div class="capture-inner"></div>
+                    </div>
+                </div>
+                <button id="cancel-camera" class="cancel-btn">Cancel</button>
+            </div>
+            
+            <div id="upload-container" class="upload-container">
+                <div id="upload-box" class="upload-box">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    <p>Tap to select invoice photo from your device</p>
+                    <div id="upload-trigger" class="upload-btn">Choose File</div>
+                    <input type="file" id="file-input" class="file-input" accept="image/*">
+                </div>
+                <button id="cancel-upload" class="cancel-btn">Cancel</button>
+            </div>
+            
+            <div id="loading" class="loading">
+                <div class="spinner"></div>
+                <p>Verifying your invoice stamp...</p>
+            </div>
+            
+            <div id="results-container" class="results-container">
+                <div id="status-box" class="status-box">
+                    <div id="status-text" class="status-text">Verification Complete</div>
+                    <p id="customer-id">Customer ID: <span id="customer-id-value"></span></p>
+                </div>
+                
+                <div class="stamp-comparison">
+                    <div class="stamp-box">
+                        <h3>Your Stamp</h3>
+                        <img id="detected-stamp" class="stamp-img">
+                    </div>
+                    <div class="stamp-box">
+                        <h3>Database Signature</h3>
+                        <img id="database-stamp" class="stamp-img">
+                        <!-- PDF link will be added here dynamically -->
+                    </div>
+                </div>
+
+                <!-- Processing Details -->
+                <div id="processing-info" class="processing-info" style="display: none;">
+                    <strong>Processing Details:</strong><br>
+                    <span id="processing-details"></span>
+                </div>
+                
+                <button id="new-verification" class="new-verification">Verify Another Invoice</button>
+            </div>
+            
+            <div id="error-message" class="error-message">
+                <p id="error-text"></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const cameraBtn = document.getElementById('camera-btn');
+        const uploadBtn = document.getElementById('upload-btn');
+        const cameraContainer = document.getElementById('camera-container');
+        const uploadContainer = document.getElementById('upload-container');
+        const video = document.getElementById('video');
+        const captureBtn = document.getElementById('capture-btn');
+        const cancelCameraBtn = document.getElementById('cancel-camera');
+        const uploadBox = document.getElementById('upload-box');
+        const fileInput = document.getElementById('file-input');
+        const uploadTrigger = document.getElementById('upload-trigger');
+        const cancelUploadBtn = document.getElementById('cancel-upload');
+        const loading = document.getElementById('loading');
+        const resultsContainer = document.getElementById('results-container');
+        const statusText = document.getElementById('status-text');
+        const customerIdValue = document.getElementById('customer-id-value');
+        const detectedStamp = document.getElementById('detected-stamp');
+        const databaseStamp = document.getElementById('database-stamp');
+        const newVerificationBtn = document.getElementById('new-verification');
+        const errorMessage = document.getElementById('error-message');
+        const errorText = document.getElementById('error-text');
+        const customerIdInput = document.getElementById('customer-id-input');
+        const processingInfo = document.getElementById('processing-info');
+        const processingDetails = document.getElementById('processing-details');
+        
+        // State variables
+        let stream = null;
+        
+        // ⚠️ IMPORTANT: Replace with your actual N8N webhook URL
+        const backendUrl = 'https://almuhannamh.app.n8n.cloud/webhook/verify-stamp';
+        
+        // Performance monitoring
+        const performanceMonitor = {
+            startTime: null,
+            
+            start() {
+                this.startTime = performance.now();
+                console.log('⏱️ Performance monitoring started');
+            },
+            
+            end(operation) {
+                if (this.startTime) {
+                    const duration = performance.now() - this.startTime;
+                    console.log(`⏱️ ${operation} completed in ${Math.round(duration)}ms`);
+                    
+                    // Log slow operations
+                    if (duration > 10000) {
+                        console.warn(`⚠️ Slow operation detected: ${operation} took ${Math.round(duration)}ms`);
+                    }
+                    
+                    this.startTime = null;
+                }
+            }
+        };
+        
+        // Utility function to generate session ID
+        function generateSessionId() {
+            return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // Event Listeners
+        cameraBtn.addEventListener('click', startCamera);
+        uploadBtn.addEventListener('click', showUpload);
+        captureBtn.addEventListener('click', capturePhoto);
+        cancelCameraBtn.addEventListener('click', resetUI);
+        uploadTrigger.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFileUpload);
+        cancelUploadBtn.addEventListener('click', resetUI);
+        newVerificationBtn.addEventListener('click', resetUI);
+        
+        // Upload box drag and drop functionality
+        uploadBox.addEventListener('click', () => fileInput.click());
+        
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('active');
+        });
+        
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('active');
+        });
+        
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('active');
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFileUpload();
+            }
+        });
+        
+        // Functions
+        function startCamera() {
+            console.log('📸 Starting camera...');
+            
+            // Hide buttons and show camera
+            document.querySelector('.option-buttons').style.display = 'none';
+            cameraContainer.style.display = 'block';
+            
+            // Access phone camera
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        facingMode: 'environment', // Use back camera on mobile
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                })
+                .then(mediaStream => {
+                    console.log('✅ Camera access granted');
+                    stream = mediaStream;
+                    video.srcObject = stream;
+                    video.play();
+                })
+                .catch(err => {
+                    console.error('❌ Camera error:', err);
+                    showError('Camera access error: ' + err.message);
+                    resetUI();
+                });
+            } else {
+                console.error('❌ Camera not supported');
+                showError('Camera not supported on this device');
+                resetUI();
+            }
+        }
+        
+        function showUpload() {
+            console.log('📁 Showing upload interface...');
+            document.querySelector('.option-buttons').style.display = 'none';
+            uploadContainer.style.display = 'block';
+        }
+        
+        function capturePhoto() {
+            console.log('📸 Capturing photo...');
+            performanceMonitor.start();
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            // Stop camera stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                console.log('📸 Camera stopped');
+            }
+            
+            // Optimize image quality and size
+            const quality = canvas.width * canvas.height > 1000000 ? 0.7 : 0.8; // Lower quality for large images
+            const imageData = canvas.toDataURL('image/jpeg', quality);
+            
+            performanceMonitor.end('Image Capture');
+            processImage(imageData);
+        }
+        
+        function handleFileUpload() {
+            console.log('📁 Processing file upload...');
+            performanceMonitor.start();
+            
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                console.log('📁 File selected:', file.name, file.type, file.size + ' bytes');
+                
+                // Validate file size before processing
+                if (file.size > 5 * 1024 * 1024) { // 5MB
+                    showError('File too large. Please select an image smaller than 5MB.');
+                    return;
+                }
+                
+                // Validate file type
+                if (!file.type.startsWith('image/')) {
+                    showError('Invalid file type. Please select an image file.');
+                    return;
+                }
+                
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    console.log('📁 File read successfully');
+                    performanceMonitor.end('File Upload');
+                    processImage(e.target.result);
+                };
+                reader.onerror = (e) => {
+                    console.error('❌ File read error:', e);
+                    performanceMonitor.end('File Upload (Error)');
+                    showError('Error reading file. Please try again.');
+                };
+                reader.readAsDataURL(file);
+            } else {
+                console.error('❌ No file selected');
+                showError('No file selected');
+            }
+        }
+        
+        function processImage(imageData) {
+            console.log('🔍 Processing image with enhanced security...');
+            
+            // 1. SECURITY VALIDATIONS
+            // Validate image size (max 5MB)
+            const maxSize = 5 * 1024 * 1024; // 5MB
+            const imageSize = imageData.length * 0.75; // Rough base64 to bytes conversion
+            
+            if (imageSize > maxSize) {
+                showError('Image too large. Please use an image smaller than 5MB.');
+                return;
+            }
+            
+            // Validate image format
+            if (!imageData.startsWith('data:image/')) {
+                showError('Invalid image format. Please use JPEG, PNG, GIF, or WebP.');
+                return;
+            }
+            
+            // Validate base64 format
+            try {
+                const base64Data = imageData.split(',')[1];
+                if (!base64Data || base64Data.length === 0) {
+                    throw new Error('Invalid image data');
+                }
+                // Test if it's valid base64
+                atob(base64Data);
+            } catch (error) {
+                showError('Invalid image data. Please try a different image.');
+                return;
+            }
+            
+            // 2. UI UPDATES
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'block';
+            errorMessage.style.display = 'none';
+            processingInfo.style.display = 'none';
+            
+            // 3. PREPARE PAYLOAD
+            // Get customer ID from input field (sanitized)
+            const customerId = customerIdInput.value.trim().replace(/[^a-zA-Z0-9]/g, '');
+            
+            console.log('📋 Customer ID:', customerId || 'Auto-detect');
+            console.log('📊 Image size:', Math.round(imageSize / 1024) + 'KB');
+            console.log('🚀 Sending to N8N:', backendUrl);
+            
+            const payload = { 
+                image: imageData,
+                customer_id: customerId || null,
+                timestamp: new Date().toISOString(),
+                user_agent: navigator.userAgent.substring(0, 100), // Limit length
+                session_id: generateSessionId()
+            };
+            
+            // 4. ENHANCED FETCH WITH TIMEOUT AND RETRY
+            const fetchWithTimeout = (url, options, timeout = 30000) => {
+                return Promise.race([
+                    fetch(url, options),
+                    new Promise((_, reject) => 
+                        setTimeout(() => reject(new Error('Request timeout')), timeout)
+                    )
+                ]);
+            };
+            
+            // Retry logic
+            const maxRetries = 2;
+            let retryCount = 0;
+            
+            const attemptRequest = async () => {
+                try {
+                    const response = await fetchWithTimeout(backendUrl, {
+                        method: 'POST',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                            'X-Client-Version': '1.0.0',
+                            'X-Retry-Count': retryCount.toString()
+                        },
+                        body: JSON.stringify(payload)
+                    }, 30000); // 30 second timeout
+                    
+                    console.log('📊 Response status:', response.status);
+                    console.log('📊 Response headers:', [...response.headers.entries()]);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    
+                    const result = await response.json();
+                    console.log('✅ Response received:', result);
+                    
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+                    
+                    // Display results
+                    displayResults(result);
+                    
+                } catch (error) {
+                    console.error(`❌ Attempt ${retryCount + 1} failed:`, error);
+                    
+                    // Retry logic for network errors
+                    if (retryCount < maxRetries && 
+                        (error.message.includes('Failed to fetch') || 
+                         error.message.includes('timeout') ||
+                         error.message.includes('HTTP 5'))) {
+                        
+                        retryCount++;
+                        console.log(`🔄 Retrying... (${retryCount}/${maxRetries})`);
+                        
+                        // Wait before retry (exponential backoff)
+                        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                        return attemptRequest();
+                    }
+                    
+                    // Final error handling
+                    loading.style.display = 'none';
+                    
+                    let errorMsg = 'Processing failed. Please try again.';
+                    
+                    if (error.message.includes('timeout')) {
+                        errorMsg = 'Request timed out. Please check your connection and try again.';
+                    } else if (error.message.includes('Failed to fetch')) {
+                        errorMsg = 'Cannot connect to verification service. Please check your internet connection.';
+                    } else if (error.message.includes('HTTP 404')) {
+                        errorMsg = 'Verification service not found. Please contact support.';
+                    } else if (error.message.includes('HTTP 429')) {
+                        errorMsg = 'Too many requests. Please wait a moment and try again.';
+                    } else if (error.message.includes('HTTP 5')) {
+                        errorMsg = 'Server error. Our team has been notified. Please try again later.';
+                    } else if (error.message.includes('Invalid image')) {
+                        errorMsg = 'Invalid image format. Please try a different image.';
+                    }
+                    
+                    showError(errorMsg);
+                }
+            };
+            
+            // Start the request
+            attemptRequest();
+        }
+        
+        function displayResults(result) {
+            console.log('📋 Displaying results...');
+            performanceMonitor.end('Complete Processing');
+            
+            loading.style.display = 'none';
+            resultsContainer.style.display = 'block';
+            
+            // Update customer ID
+            customerIdValue.textContent = result.customer_id || 'Not detected';
+            
+            // Update status with confidence indicator
+            const confidenceLevel = result.confidence > 0.9 ? 'High' : result.confidence > 0.7 ? 'Medium' : 'Low';
+            
+            if (result.match) {
+                statusText.innerHTML = `✅ VALID STAMP<br><small>Confidence: ${confidenceLevel}</small>`;
+                statusText.className = 'status-text status-valid';
+            } else {
+                statusText.innerHTML = `❌ INVALID STAMP<br><small>Confidence: ${confidenceLevel}</small>`;
+                statusText.className = 'status-text status-invalid';
+            }
+            
+            // Update detected stamp
+            if (result.extracted_stamp) {
+                detectedStamp.src = result.extracted_stamp;
+                detectedStamp.style.display = 'block';
+            } else {
+                detectedStamp.style.display = 'none';
+            }
+            
+            // Handle database signature (PDF link instead of image)
+            const stampBox = databaseStamp.parentNode;
+            
+            // Remove any existing PDF links
+            const existingLinks = stampBox.querySelectorAll('.pdf-link');
+            existingLinks.forEach(link => link.remove());
+            
+            if (result.signature_url && result.match) {
+                // Hide the image and show PDF link
+                databaseStamp.style.display = 'none';
+                
+                const pdfLink = document.createElement('a');
+                pdfLink.href = result.signature_url;
+                pdfLink.target = '_blank';
+                pdfLink.rel = 'noopener noreferrer';
+                pdfLink.className = 'pdf-link';
+                pdfLink.innerHTML = `
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 8px;">
+                        <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                    </svg>
+                    View Original Signature PDF
+                `;
+                stampBox.appendChild(pdfLink);
+            } else if (result.database_stamp) {
+                // Show database stamp image if available
+                databaseStamp.src = result.database_stamp;
+                databaseStamp.style.display = 'block';
+            } else {
+                // Show placeholder or message
+                databaseStamp.style.display = 'none';
+                if (!result.match) {
+                    const noSignatureMsg = document.createElement('p');
+                    noSignatureMsg.textContent = 'No signature found for this customer';
+                    noSignatureMsg.style.color = '#5f6368';
+                    noSignatureMsg.style.fontStyle = 'italic';
+                    stampBox.appendChild(noSignatureMsg);
+                }
+            }
+            
+            // Show enhanced processing details
+            if (result.processing_details) {
+                const processingTime = new Date(result.processing_details.timestamp).toLocaleString();
+                const similarity = result.similarity_score ? (result.similarity_score * 100).toFixed(1) + '%' : 'N/A';
+                const confidence = result.confidence ? (result.confidence * 100).toFixed(1) + '%' : 'N/A';
+                
+                processingDetails.innerHTML = `
+                    <strong>Verification Details:</strong><br>
+                    • Similarity Score: ${similarity}<br>
+                    • Detection Confidence: ${confidence}<br>
+                    • Customer ID: ${result.customer_id || 'Auto-detected'}<br>
+                    • Processed: ${processingTime}<br>
+                    • Status: ${result.match ? 'Valid' : 'Invalid'}
+                `;
+                processingInfo.style.display = 'block';
+            }
+            
+            console.log('✅ Results displayed successfully');
+        }
+        
+        function resetUI() {
+            console.log('🔄 Resetting UI...');
+            
+            // Stop camera if active
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+                console.log('📸 Camera stopped');
+            }
+            
+            // Reset all UI elements
+            document.querySelector('.option-buttons').style.display = 'flex';
+            cameraContainer.style.display = 'none';
+            uploadContainer.style.display = 'none';
+            loading.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            errorMessage.style.display = 'none';
+            processingInfo.style.display = 'none';
+            
+            // Reset file input and customer ID
+            fileInput.value = '';
+            customerIdInput.value = '';
+            
+            // Clear any dynamic content
+            const existingLinks = document.querySelectorAll('.pdf-link');
+            existingLinks.forEach(link => link.remove());
+            
+            console.log('✅ UI reset complete');
+        }
+        
+        function showError(message, allowRetry = false) {
+            console.error('❌ Showing error:', message);
+            errorText.innerHTML = message;
+            
+            if (allowRetry) {
+                const retryButton = document.createElement('button');
+                retryButton.textContent = 'Try Again';
+                retryButton.className = 'btn btn-primary';
+                retryButton.style.marginTop = '10px';
+                retryButton.onclick = resetUI;
+                errorText.appendChild(document.createElement('br'));
+                errorText.appendChild(retryButton);
+            }
+            
+            errorMessage.style.display = 'block';
+        }
+        
+        // System health check
+        const healthCheck = async () => {
+            try {
+                // Simple ping to check if service is available
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                
+                const response = await fetch(backendUrl.replace('/verify-stamp', '/health'), {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                const status = response.ok ? 'Healthy' : 'Issues detected';
+                console.log('🏥 System Status:', status);
+                
+                return response.ok;
+            } catch (error) {
+                console.error('🏥 Health check failed:', error.name);
+                return false;
+            }
+        };
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🚀 Invoice Stamp Verification App Loaded');
+            console.log('🔗 Backend URL:', backendUrl);
+            
+            // Run initial health check
+            setTimeout(healthCheck, 2000);
+            
+            // Run health check every 5 minutes
+            setInterval(healthCheck, 5 * 60 * 1000);
+        });
+    </script>
+</body>
+</html>
