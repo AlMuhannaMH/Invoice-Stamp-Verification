@@ -178,7 +178,7 @@ btnCheck.addEventListener('click', async () => {
     const pdfId = pdfIdInput.value.trim();
     
     if (!pdfId) {
-        showError('Please select a PDF ID from the extracted codes.');
+        showError('Please select a Customer Code from the extracted codes.');
         return;
     }
     

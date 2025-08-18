@@ -16,7 +16,7 @@ btnCheck.addEventListener('click', async () => {
   const id   = pdfIdInput.value.trim();    
   const file = fileInput.files[0];    
   if (!id || !file) {    
-    return alert('Please enter a PDF ID and select an image.');    
+    return alert('Please enter a Customer Code and select an image.');    
   }    
     
   try {

@@ -9,7 +9,7 @@ exports.handler = async (event) => {
         "Access-Control-Allow-Methods": "GET",
         "Access-Control-Allow-Headers": "Content-Type" 
       },
-      body: "Missing PDF ID"
+      body: "Missing Customer Code"
     };
   }
   
