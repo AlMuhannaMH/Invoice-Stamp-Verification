@@ -801,10 +801,11 @@
         // ==== ADVANCED IMAGE COMPARISON (OpenCV) ====    
         async function compareStampImages(uploadedImg, pdfImg) {
             try {
+                // Read canvases as Mats    
                 const uploadedMat = cv.imread(document.getElementById('canvasUp'));
                 const pdfMat = cv.imread(document.getElementById('canvasPdf'));
 
-                // Resize to equal size    
+                // Resize both images to the same size    
                 const size = new cv.Size(300, 300);
                 const resizedUploaded = new cv.Mat();
                 const resizedPDF = new cv.Mat();
@@ -817,7 +818,7 @@
                 cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);
                 cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);
 
-                // -- HISTOGRAMS --    
+                // Prepare MatVectors and IntVector for calcHist    
                 const grayUploadedVec = new cv.MatVector();
                 grayUploadedVec.push_back(grayUploaded);
                 const grayPDFVec = new cv.MatVector();
@@ -825,26 +826,29 @@
                 const channels = new cv.IntVector();
                 channels.push_back(0);
 
-                const mask = new cv.Mat();
-                const histUploaded = new cv.Mat();
-                const histPDF = new cv.Mat();
+                // Prepare histSize and ranges as plain arrays    
                 const histSize = [256];
                 const ranges = [0, 256];
 
-                // This is the critical line -- JS array works for both histSize and ranges!    
+                // Calculate histograms    
+                const mask = new cv.Mat(); // no mask    
+                const histUploaded = new cv.Mat();
+                const histPDF = new cv.Mat();
+
                 cv.calcHist(grayUploadedVec, channels, mask, histUploaded, histSize, ranges);
                 cv.calcHist(grayPDFVec, channels, mask, histPDF, histSize, ranges);
 
+                // Compare histograms using correlation    
                 const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);
 
-                // -- STRUCTURAL SIMILARITY --    
+                // Calculate structural similarity (simplified SSIM)    
                 const diff = new cv.Mat();
                 cv.absdiff(grayUploaded, grayPDF, diff);
                 const meanDiff = cv.mean(diff)[0];
                 const maxDiff = 255;
                 const structuralSimilarity = 1 - (meanDiff / maxDiff);
 
-                // -- ORB FEATURE MATCHES --    
+                // Feature matching using ORB    
                 const orb = new cv.ORB();
                 const kp1 = new cv.KeyPointVector();
                 const kp2 = new cv.KeyPointVector();
@@ -863,18 +867,32 @@
                     bf.delete();
                 }
 
-                // Cleanup    
-                uploadedMat.delete(); pdfMat.delete(); resizedUploaded.delete(); resizedPDF.delete();
-                grayUploaded.delete(); grayPDF.delete();
-                grayUploadedVec.delete(); grayPDFVec.delete(); channels.delete();
-                histUploaded.delete(); histPDF.delete(); mask.delete(); diff.delete();
-                orb.delete(); kp1.delete(); kp2.delete(); des1.delete(); des2.delete();
+                // Cleanup all OpenCV objects    
+                uploadedMat.delete();
+                pdfMat.delete();
+                resizedUploaded.delete();
+                resizedPDF.delete();
+                grayUploaded.delete();
+                grayPDF.delete();
+                grayUploadedVec.delete();
+                grayPDFVec.delete();
+                channels.delete();
+                histUploaded.delete();
+                histPDF.delete();
+                mask.delete();
+                diff.delete();
+                orb.delete();
+                kp1.delete();
+                kp2.delete();
+                des1.delete();
+                des2.delete();
 
-                // Score calculation    
+                // Calculate overall similarity score    
                 const histogramWeight = 0.4;
                 const structuralWeight = 0.4;
                 const featureWeight = 0.2;
-                const normalizedFeatureScore = Math.min(featureMatches / 50, 1);
+                const normalizedFeatureScore = Math.min(featureMatches / 50, 1); // Normalize feature matches    
+
                 const overallScore = (
                     correlation * histogramWeight +
                     structuralSimilarity * structuralWeight +
@@ -961,4 +979,5 @@
     </script>
 </body>
 v1
+
 </html>
