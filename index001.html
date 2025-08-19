@@ -549,78 +549,123 @@
     
         // ==== ADVANCED IMAGE COMPARISON (OpenCV) ====    
         async function compareStampImages(uploadedImg, pdfImg) {    
-            try {    
-                const uploadedMat = cv.imread(document.getElementById('canvasUp'));    
-                const pdfMat = cv.imread(document.getElementById('canvasPdf'));    
-                const size = new cv.Size(300, 300);    
-                const resizedUploaded = new cv.Mat();    
-                const resizedPDF = new cv.Mat();    
-                cv.resize(uploadedMat, resizedUploaded, size);    
-                cv.resize(pdfMat, resizedPDF, size);    
-                const grayUploaded = new cv.Mat();    
-                const grayPDF = new cv.Mat();    
-                cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);    
-                cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);    
-                const histUploaded = new cv.Mat();    
-                const histPDF = new cv.Mat();    
-                const histSize = [256];    
-                const ranges = [0, 256];    
-                const mask = new cv.Mat();    
-                cv.calcHist(grayUploaded, [0], mask, histUploaded, histSize, ranges);    
-                cv.calcHist(grayPDF, [0], mask, histPDF, histSize, ranges);    
-                const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);    
-                const diff = new cv.Mat();    
-                cv.absdiff(grayUploaded, grayPDF, diff);    
-                const meanDiff = cv.mean(diff)[0];    
-                const maxDiff = 255;    
-                const structuralSimilarity = 1 - (meanDiff / maxDiff);    
-                const orb = new cv.ORB();    
-                const kp1 = new cv.KeyPointVector();    
-                const kp2 = new cv.KeyPointVector();    
-                const des1 = new cv.Mat();    
-                const des2 = new cv.Mat();    
-                orb.detectAndCompute(grayUploaded, mask, kp1, des1);    
-                orb.detectAndCompute(grayPDF, mask, kp2, des2);    
-                let featureMatches = 0;    
-                if (des1.rows > 0 && des2.rows > 0) {    
-                    const bf = new cv.BFMatcher();    
-                    const matches = new cv.DMatchVector();    
-                    bf.match(des1, des2, matches);    
-                    featureMatches = matches.size();    
-                }    
-                uploadedMat.delete(); pdfMat.delete(); resizedUploaded.delete();    
-                resizedPDF.delete(); grayUploaded.delete(); grayPDF.delete();    
-                histUploaded.delete(); histPDF.delete(); mask.delete();    
-                diff.delete(); orb.delete(); kp1.delete(); kp2.delete();    
-                des1.delete(); des2.delete();    
-                const histogramWeight = 0.4;    
-                const structuralWeight = 0.4;    
-                const featureWeight = 0.2;    
-                const normalizedFeatureScore = Math.min(featureMatches / 50, 1);    
-                const overallScore = (    
-                    correlation * histogramWeight +    
-                    structuralSimilarity * structuralWeight +    
-                    normalizedFeatureScore * featureWeight    
-                );    
-                return {    
-                    overallScore: Math.max(0, Math.min(1, overallScore)),    
-                    correlation: correlation,    
-                    structuralSimilarity: structuralSimilarity,    
-                    featureMatches: featureMatches,    
-                    isMatch: overallScore > 0.7    
-                };    
-            } catch (error) {    
-                console.error('Error in image comparison:', error);    
-                return {    
-                    overallScore: 0.5,    
-                    correlation: 0.5,    
-                    structuralSimilarity: 0.5,    
-                    featureMatches: 0,    
-                    isMatch: false,    
-                    error: 'Advanced comparison failed, basic comparison performed'    
-                };    
-            }    
+    try {    
+        // Read canvases as Mats    
+        const uploadedMat = cv.imread(document.getElementById('canvasUp'));    
+        const pdfMat = cv.imread(document.getElementById('canvasPdf'));    
+    
+        // Resize both images to the same size    
+        const size = new cv.Size(300, 300);    
+        const resizedUploaded = new cv.Mat();    
+        const resizedPDF = new cv.Mat();    
+        cv.resize(uploadedMat, resizedUploaded, size);    
+        cv.resize(pdfMat, resizedPDF, size);    
+    
+        // Convert to grayscale    
+        const grayUploaded = new cv.Mat();    
+        const grayPDF = new cv.Mat();    
+        cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);    
+        cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);    
+    
+        // Prepare MatVectors and IntVector for calcHist    
+        const grayUploadedVec = new cv.MatVector();    
+        grayUploadedVec.push_back(grayUploaded);    
+        const grayPDFVec = new cv.MatVector();    
+        grayPDFVec.push_back(grayPDF);    
+        const channels = new cv.IntVector();    
+        channels.push_back(0);    
+    
+        // Calculate histograms    
+        const histUploaded = new cv.Mat();    
+        const histPDF = new cv.Mat();    
+        const histSize = [256];    
+        const ranges = [0, 256];    
+        const mask = new cv.Mat();    
+    
+        cv.calcHist(grayUploadedVec, channels, mask, histUploaded, histSize, ranges);    
+        cv.calcHist(grayPDFVec, channels, mask, histPDF, histSize, ranges);    
+    
+        // Compare histograms using correlation    
+        const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);    
+    
+        // Calculate structural similarity (simplified SSIM)    
+        const diff = new cv.Mat();    
+        cv.absdiff(grayUploaded, grayPDF, diff);    
+        const meanDiff = cv.mean(diff)[0];    
+        const maxDiff = 255;    
+        const structuralSimilarity = 1 - (meanDiff / maxDiff);    
+    
+        // Feature matching using ORB    
+        const orb = new cv.ORB();    
+        const kp1 = new cv.KeyPointVector();    
+        const kp2 = new cv.KeyPointVector();    
+        const des1 = new cv.Mat();    
+        const des2 = new cv.Mat();    
+        orb.detectAndCompute(grayUploaded, mask, kp1, des1);    
+        orb.detectAndCompute(grayPDF, mask, kp2, des2);    
+    
+        let featureMatches = 0;    
+        if (des1.rows > 0 && des2.rows > 0) {    
+            const bf = new cv.BFMatcher();    
+            const matches = new cv.DMatchVector();    
+            bf.match(des1, des2, matches);    
+            featureMatches = matches.size();    
+            matches.delete();    
+            bf.delete();    
         }    
+    
+        // Clean up all OpenCV objects    
+        uploadedMat.delete();    
+        pdfMat.delete();    
+        resizedUploaded.delete();    
+        resizedPDF.delete();    
+        grayUploaded.delete();    
+        grayPDF.delete();    
+        grayUploadedVec.delete();    
+        grayPDFVec.delete();    
+        channels.delete();    
+        histUploaded.delete();    
+        histPDF.delete();    
+        mask.delete();    
+        diff.delete();    
+        orb.delete();    
+        kp1.delete();    
+        kp2.delete();    
+        des1.delete();    
+        des2.delete();    
+    
+        // Final score    
+        const histogramWeight = 0.4;    
+        const structuralWeight = 0.4;    
+        const featureWeight = 0.2;    
+        const normalizedFeatureScore = Math.min(featureMatches / 50, 1); // Normalize feature matches    
+    
+        const overallScore = (    
+            correlation * histogramWeight +    
+            structuralSimilarity * structuralWeight +    
+            normalizedFeatureScore * featureWeight    
+        );    
+    
+        return {    
+            overallScore: Math.max(0, Math.min(1, overallScore)),    
+            correlation: correlation,    
+            structuralSimilarity: structuralSimilarity,    
+            featureMatches: featureMatches,    
+            isMatch: overallScore > 0.7    
+        };    
+    
+    } catch (error) {    
+        console.error('Error in image comparison:', error);    
+        return {    
+            overallScore: 0.5,    
+            correlation: 0.5,    
+            structuralSimilarity: 0.5,    
+            featureMatches: 0,    
+            isMatch: false,    
+            error: 'Advanced comparison failed, basic comparison performed'    
+        };    
+    }    
+}       
     
         // ==== RESULT DISPLAY ====    
         function displayComparisonResults(result, pdfId) {    
