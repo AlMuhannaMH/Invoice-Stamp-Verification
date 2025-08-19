@@ -803,17 +803,21 @@
             try {
                 const uploadedMat = cv.imread(document.getElementById('canvasUp'));
                 const pdfMat = cv.imread(document.getElementById('canvasPdf'));
+
+                // Resize to equal size    
                 const size = new cv.Size(300, 300);
                 const resizedUploaded = new cv.Mat();
                 const resizedPDF = new cv.Mat();
                 cv.resize(uploadedMat, resizedUploaded, size);
                 cv.resize(pdfMat, resizedPDF, size);
 
+                // Convert to grayscale    
                 const grayUploaded = new cv.Mat();
                 const grayPDF = new cv.Mat();
                 cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);
                 cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);
 
+                // -- HISTOGRAMS --    
                 const grayUploadedVec = new cv.MatVector();
                 grayUploadedVec.push_back(grayUploaded);
                 const grayPDFVec = new cv.MatVector();
@@ -821,25 +825,26 @@
                 const channels = new cv.IntVector();
                 channels.push_back(0);
 
-                // Use TypedArrays for histSize and ranges!    
+                const mask = new cv.Mat();
                 const histUploaded = new cv.Mat();
                 const histPDF = new cv.Mat();
-                const histSize = new Int32Array([256]);
-                const ranges = new Float32Array([0, 256]);
-                const mask = new cv.Mat();
+                const histSize = [256];
+                const ranges = [0, 256];
 
+                // This is the critical line -- JS array works for both histSize and ranges!    
                 cv.calcHist(grayUploadedVec, channels, mask, histUploaded, histSize, ranges);
                 cv.calcHist(grayPDFVec, channels, mask, histPDF, histSize, ranges);
 
                 const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);
 
+                // -- STRUCTURAL SIMILARITY --    
                 const diff = new cv.Mat();
                 cv.absdiff(grayUploaded, grayPDF, diff);
                 const meanDiff = cv.mean(diff)[0];
                 const maxDiff = 255;
                 const structuralSimilarity = 1 - (meanDiff / maxDiff);
 
-                // Feature matching using ORB    
+                // -- ORB FEATURE MATCHES --    
                 const orb = new cv.ORB();
                 const kp1 = new cv.KeyPointVector();
                 const kp2 = new cv.KeyPointVector();
@@ -859,30 +864,17 @@
                 }
 
                 // Cleanup    
-                uploadedMat.delete();
-                pdfMat.delete();
-                resizedUploaded.delete();
-                resizedPDF.delete();
-                grayUploaded.delete();
-                grayPDF.delete();
-                grayUploadedVec.delete();
-                grayPDFVec.delete();
-                channels.delete();
-                histUploaded.delete();
-                histPDF.delete();
-                mask.delete();
-                diff.delete();
-                orb.delete();
-                kp1.delete();
-                kp2.delete();
-                des1.delete();
-                des2.delete();
+                uploadedMat.delete(); pdfMat.delete(); resizedUploaded.delete(); resizedPDF.delete();
+                grayUploaded.delete(); grayPDF.delete();
+                grayUploadedVec.delete(); grayPDFVec.delete(); channels.delete();
+                histUploaded.delete(); histPDF.delete(); mask.delete(); diff.delete();
+                orb.delete(); kp1.delete(); kp2.delete(); des1.delete(); des2.delete();
 
+                // Score calculation    
                 const histogramWeight = 0.4;
                 const structuralWeight = 0.4;
                 const featureWeight = 0.2;
                 const normalizedFeatureScore = Math.min(featureMatches / 50, 1);
-
                 const overallScore = (
                     correlation * histogramWeight +
                     structuralSimilarity * structuralWeight +
@@ -968,5 +960,5 @@
         }    
     </script>
 </body>
-
+v1
 </html>
