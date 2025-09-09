@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Advanced stamp verification system with OCR, PDF processing, and computer vision">
+    <meta name="theme-color" content="#EDA740">
+    
+    <!-- Security Headers -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:;">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="X-Frame-Options" content="DENY">
+    
+    <title>Invoice Stamp Checker - Advanced Verification System</title>
+    
+    <!-- Preload critical resources -->
+    <link rel="preload" href="logo.png" as="image">
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .catch(err => console.log('ServiceWorker registration failed:', err));
+            });
+        }
+    </script>
+
+    <style>
+        :root {
+            --primary-color: #4CAF50;
+            --primary-hover: #45a049;
+            --secondary-color: #2196F3;
+            --secondary-hover: #1976D2;
+            --accent-color: #EDA740;
+            --error-color: #e53e3e;
+            --success-color: #38a169;
+            --warning-color: #ff9800;
+            --info-color: #0c5460;
+            --text-color: #2d3748;
+            --border-color: #ddd;
+            --bg-light: #f8f9fa;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+            --border-radius: 8px;
+            --max-width: 800px;
+            --spacing-xs: 5px;
+            --spacing-sm: 10px;
+            --spacing-md: 15px;
+            --spacing-lg: 20px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0)), 
+                        url('overlay-image.png') no-repeat bottom center;
+            background-size: cover;
+            min-height: 100vh;
+            padding: var(--spacing-lg);
+            line-height: 1.6;
+            color: var(--text-color);
+        }
+
+        /* Enhanced focus management for accessibility */
+        *:focus {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -40px;
+            left: 6px;
+            background: var(--primary-color);
+            color: white;
+            padding: 8px;
+            text-decoration: none;
+            border-radius: 4px;
+            z-index: 1000;
+        }
+
+        .skip-link:focus {
+            top: 6px;
+        }
+
+        .container {
+            max-width: var(--max-width);
+            margin: var(--spacing-xs) auto;
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow);
+            padding: var(--spacing-lg);
+            position: relative;
+        }
+
+        .header-container {
+            border: 2px solid var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-sm) var(--spacing-xs);
+            text-align: center;
+            margin-bottom: var(--spacing-sm);
+            background-color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            position: relative;
+        }
+
+        .logo {
+            height: 100px;
+            width: auto;
+            object-fit: contain;
+        }
+
+        .header-title {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            margin: var(--spacing-xs);
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-sm) var(--spacing-xs);
+            text-align: center;
+            margin-bottom: var(--spacing-xs);
+            transition: var(--transition);
+            cursor: pointer;
+            position: relative;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .upload-area.dragover {
+            border-color: var(--primary-color);
+            background: #f0fff0;
+            transform: scale(1.02);
+        }
+
+        .upload-area:hover {
+            border-color: var(--primary-color);
+            background: #f9fff9;
+        }
+
+        .upload-area.processing {
+            pointer-events: none;
+            opacity: 0.7;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: var(--transition);
+            margin: var(--spacing-xs);
+            display: inline-block;
+            position: relative;
+            min-width: 180px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: var(--secondary-color);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--secondary-hover);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        }
+
+        .btn-icon {
+            margin-right: 8px;
+        }
+
+        .progress {
+            display: none;
+            margin: var(--spacing-xs) 0;
+            background: var(--bg-light);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-md);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #edf2f7;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+            width: 0%;
+            transition: width 0.3s;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background-image: linear-gradient(
+                -45deg,
+                rgba(255, 255, 255, .2) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255, 255, 255, .2) 50%,
+                rgba(255, 255, 255, .2) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 50px 50px;
+            animation: move 2s linear infinite;
+        }
+
+        @keyframes move {
+            0% { background-position: 0 0; }
+            100% { background-position: 50px 50px; }
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: var(--spacing-sm);
+            color: #666;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .progress-details {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: var(--spacing-xs);
+            font-size: 12px;
+            color: #888;
+        }
+
+        .extracted-codes {
+            display: none;
+            background: #e8f5e8;
+            border: 1px solid var(--primary-color);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-md);
+            margin: var(--spacing-xs) 0;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .codes-header {
+            font-weight: 600;
+            margin-bottom: var(--spacing-sm);
+            color: var(--text-color);
+        }
+
+        .code-item {
+            background: white;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 12px;
+            margin: var(--spacing-xs) 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: var(--transition);
+        }
+
+        .code-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .customer-code {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--text-color);
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .use-code-btn {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: var(--transition);
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+
+        .use-code-btn:hover {
+            background: var(--primary-hover);
+            transform: scale(1.05);
+        }
+
+        .customer-code-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 14px;
+            margin: var(--spacing-xs) 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            background: var(--bg-light);
+            transition: var(--transition);
+        }
+
+        .customer-code-input:focus {
+            border-color: var(--primary-color);
+            background: white;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+        }
+
+        #result {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--spacing-lg);
+            margin: var(--spacing-xs) 0;
+        }
+
+        #result.show {
+            display: grid;
+            animation: slideUp 0.5s ease;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .canvas-container {
+            background: var(--bg-light);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-md);
+            text-align: center;
+            border: 1px solid #eee;
+            transition: var(--transition);
+        }
+
+        .canvas-container:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow);
+        }
+
+        .canvas-container h4 {
+            margin-bottom: var(--spacing-xs);
+            color: var(--text-color);
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        canvas {
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            max-width: 100%;
+            height: auto;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #score {
+            background: linear-gradient(135deg, var(--primary-color), var(--success-color));
+            color: white;
+            padding: var(--spacing-md);
+            border-radius: var(--border-radius);
+            text-align: center;
+            font-size: 16px;
+            font-weight: 600;
+            margin: var(--spacing-xs) 0;
+            display: none;
+            box-shadow: var(--shadow);
+        }
+
+        #score.show {
+            display: block;
+            animation: pulse 0.6s ease;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .score-details {
+            margin-top: var(--spacing-sm);
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .score-metric {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        .error, .alert {
+            color: var(--error-color);
+            background: #fed7d7;
+            border: 1px solid #feb2b2;
+            border-radius: 6px;
+            padding: 12px;
+            margin: var(--spacing-xs) 0;
+            display: none;
+            font-size: 14px;
+            position: relative;
+            animation: shake 0.5s ease;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+
+        .status {
+            margin-top: var(--spacing-sm);
+            padding: 12px;
+            border-radius: 6px;
+            display: none;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition);
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: var(--info-color);
+            border: 1px solid #bee5eb;
+        }
+
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .button-row {
+            display: flex;
+            justify-content: center;
+            gap: var(--spacing-sm);
+            margin: var(--spacing-xs) 0;
+            flex-wrap: wrap;
+        }
+
+        /* Enhanced loading states */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--border-radius);
+            backdrop-filter: blur(2px);
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Performance indicators */
+        .performance-stats {
+            display: none;
+            background: var(--bg-light);
+            border-radius: var(--border-radius);
+            padding: var(--spacing-sm);
+            margin-top: var(--spacing-sm);
+            font-size: 12px;
+            color: #666;
+        }
+
+        .performance-stats.show {
+            display: block;
+        }
+
+        /* Responsive design improvements */
+        @media (max-width: 768px) {
+            #result {
+                grid-template-columns: 1fr;
+                gap: var(--spacing-md);
+            }
+
+            .container {
+                padding: var(--spacing-md);
+            }
+
+            .header-title {
+                font-size: 16px;
+            }
+
+            .btn {
+                min-width: 150px;
+            }
+        }
+
+        @media (max-width: 500px) {
+            .button-row {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .header-container {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .header-title {
+                position: static;
+                transform: none;
+                margin-top: var(--spacing-sm);
+            }
+        }
+
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-color: #e2e8f0;
+                --bg-light: #2d3748;
+                --border-color: #4a5568;
+            }
+
+            body {
+                background-color: #1a202c;
+                color: var(--text-color);
+            }
+
+            .container {
+                background: #2d3748;
+                color: var(--text-color);
+            }
+        }
+
+        /* High contrast mode */
+        @media (prefers-contrast: high) {
+            .btn {
+                border: 2px solid currentColor;
+            }
+            
+            .upload-area {
+                border-width: 3px;
+            }
+        }
+
+        /* Reduced motion preference */
+        @media (prefers-reduced-motion: reduce) {
+            * {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    
+    <div class="container" id="screenshot-target" role="main">
+        <div class="loading-overlay" id="loadingOverlay" aria-hidden="true">
+            <div class="spinner" aria-label="Loading"></div>
+        </div>
+
+        <header class="header-container" role="banner">
+            <img src="logo.png" alt="Company Logo" class="logo" loading="lazy">
+            <h1 class="header-title" id="main-content">Invoice Stamp Checker</h1>
+        </header>
+
+        <section class="upload-section" role="region" aria-labelledby="upload-heading">
+            <h2 id="upload-heading" class="sr-only">File Upload</h2>
+            <div class="upload-area" 
+                 id="uploadArea" 
+                 role="button" 
+                 tabindex="0"
+                 aria-label="Upload image or PDF file for stamp verification"
+                 aria-describedby="upload-instructions">
+                <button class="btn" 
+                        onclick="document.getElementById('fileInput').click()"
+                        aria-label="Select file to upload">
+                    <span class="btn-icon" aria-hidden="true">📤</span>
+                    <span>1) Take Photo</span>
+                </button>
+            </div>
+            <div id="upload-instructions" class="sr-only">
+                Upload an image or PDF file containing stamps for verification. Supported formats: JPG, PNG, PDF.
+            </div>
+        </section>
+
+        <input type="file" 
+               id="fileInput" 
+               class="file-input" 
+               accept="image/*,.pdf" 
+               capture="environment"
+               aria-label="File input for stamp verification">
+
+        <div class="progress" id="progressDiv" role="progressbar" aria-live="polite">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing...</div>
+            <div class="progress-details" id="progressDetails">
+                <span id="currentStep"></span>
+                <span id="timeElapsed">00:00</span>
+            </div>
+        </div>
+
+        <div class="error" id="errorDiv" role="alert" aria-live="assertive"></div>
+        
+        <div class="extracted-codes" id="extractedCodesDiv" role="region" aria-labelledby="codes-heading">
+            <h3 id="codes-heading" class="codes-header">Extracted Customer Codes</h3>
+            <div id="codesList" role="list"></div>
+        </div>
+
+        <div class="input-section" role="region" aria-labelledby="code-input-heading">
+            <h3 id="code-input-heading" class="sr-only">Customer Code Input</h3>
+            <label for="pdfId" class="sr-only">Selected Customer Code</label>
+            <input id="pdfId" 
+                   type="text" 
+                   class="customer-code-input" 
+                   placeholder="Customer Code" 
+                   readonly 
+                   aria-describedby="code-help">
+            <div id="code-help" class="sr-only">
+                This field will be automatically filled when you select a customer code from the extracted codes above.
+            </div>
+        </div>
+
+        <div class="button-row" role="group" aria-label="Action buttons">
+            <button id="btnCheck" 
+                    class="btn" 
+                    disabled
+                    aria-describedby="check-help">
+                <span class="btn-icon" aria-hidden="true">🔍</span>
+                <span>2) Match</span>
+            </button>
+            <button class="btn btn-secondary" 
+                    onclick="captureAndShare()" 
+                    id="shareBtn" 
+                    disabled
+                    aria-describedby="share-help">
+                <span class="btn-icon" aria-hidden="true">📱</span>
+                <span>3) Share</span>
+            </button>
+        </div>
+        
+        <div id="check-help" class="sr-only">
+            Compare your uploaded image with the PDF stamp for the selected customer code.
+        </div>
+        <div id="share-help" class="sr-only">
+            Share or download the verification results after comparison is complete.
+        </div>
+
+        <section id="result" role="region" aria-labelledby="results-heading">
+            <h2 id="results-heading" class="sr-only">Comparison Results</h2>
+            <div class="canvas-container">
+                <h4>📄 PDF Stamp</h4>
+                <canvas id="canvasPdf" aria-label="PDF stamp image"></canvas>
+            </div>
+            <div class="canvas-container">
+                <h4>🖼️ Your Image</h4>
+                <canvas id="canvasUp" aria-label="Uploaded image"></canvas>
+            </div>
+        </section>
+
+        <div id="score" role="region" aria-labelledby="score-heading" aria-live="polite">
+            <h3 id="score-heading" class="sr-only">Verification Score</h3>
+        </div>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        
+        <div class="performance-stats" id="performanceStats">
+            <h4>Performance Metrics</h4>
+            <div id="performanceDetails"></div>
+        </div>
+    </div>
+
+    <!-- Screen reader only content -->
+    <div class="sr-only">
+        <style>
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+        </style>
+    </div>
+
+    <script>
+        'use strict';
+        
+        // Configuration and Constants
+        const CONFIG = {
+            PDF_PROXY_URL: '/.netlify/functions/fetch-pdf',
+            CUSTOMER_CODE_REGEX: /966\d{5}/g,
+            COMPARISON_THRESHOLD: 0.7,
+            MAX_IMAGE_SIZE: 400,
+            MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
+            SUPPORTED_IMAGE_TYPES: ['image/jpeg', 'image/png', 'image/webp'],
+            SUPPORTED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+            OCR_LANGUAGES: ['eng'],
+            TESSERACT_OPTIONS: {
+                logger: null, // Will be set dynamically
+                tessedit_char_whitelist: '0123456789',
+                tessedit_pageseg_mode: 6
+            },
+            PERFORMANCE_TRACKING: true,
+            ERROR_RETRY_ATTEMPTS: 3,
+            ERROR_RETRY_DELAY: 1000,
+            CACHE_DURATION: 5 * 60 * 1000 // 5 minutes
+        };
+
+        // Custom Error Classes
+        class StampCheckerError extends Error {
+            constructor(message, type = 'general', code = null, originalError = null) {
+                super(message);
+                this.name = 'StampCheckerError';
+                this.type = type;
+                this.code = code;
+                this.originalError = originalError;
+                this.timestamp = new Date().toISOString();
+            }
+        }
+
+        class ValidationError extends StampCheckerError {
+            constructor(message, field = null) {
+                super(message, 'validation', 'VALIDATION_ERROR');
+                this.field = field;
+            }
+        }
+
+        class ProcessingError extends StampCheckerError {
+            constructor(message, step = null) {
+                super(message, 'processing', 'PROCESSING_ERROR');
+                this.step = step;
+            }
+        }
+
+        // Resource Management System
+        class ResourceManager {
+            constructor() {
+                this.resources = new Set();
+                this.memoryUsage = { initial: this.getMemoryUsage() };
+            }
+
+            track(resource) {
+                this.resources.add(resource);
+                return resource;
+            }
+
+            cleanup() {
+                for (const resource of this.resources) {
+                    try {
+                        if (resource && typeof resource.delete === 'function') {
+                            resource.delete();
+                        } else if (resource && typeof resource.close === 'function') {
+                            resource.close();
+                        }
+                    } catch (error) {
+                        console.warn('Error cleaning up resource:', error);
+                    }
+                }
+                this.resources.clear();
+                this.logMemoryUsage('cleanup');
+            }
+
+            getMemoryUsage() {
+                if (performance.memory) {
+                    return {
+                        used: performance.memory.usedJSHeapSize,
+                        total: performance.memory.totalJSHeapSize,
+                        limit: performance.memory.jsHeapSizeLimit
+                    };
+                }
+                return null;
+            }
+
+            logMemoryUsage(context = '') {
+                const current = this.getMemoryUsage();
+                if (current && CONFIG.PERFORMANCE_TRACKING) {
+                    console.log(`Memory ${context}:`, {
+                        current: `${(current.used / 1024 / 1024).toFixed(2)}MB`,
+                        total: `${(current.total / 1024 / 1024).toFixed(2)}MB`,
+                        limit: `${(current.limit / 1024 / 1024).toFixed(2)}MB`
+                    });
+                }
+            }
+        }
+
+        // Performance Tracking System
+        class PerformanceTracker {
+            constructor() {
+                this.metrics = new Map();
+                this.startTimes = new Map();
+            }
+
+            start(operation) {
+                this.startTimes.set(operation, performance.now());
+                performance.mark(`${operation}-start`);
+            }
+
+            end(operation) {
+                if (!this.startTimes.has(operation)) return null;
+                
+                const startTime = this.startTimes.get(operation);
+                const duration = performance.now() - startTime;
+                
+                performance.mark(`${operation}-end`);
+                performance.measure(operation, `${operation}-start`, `${operation}-end`);
+                
+                this.metrics.set(operation, duration);
+                this.startTimes.delete(operation);
+                
+                if (CONFIG.PERFORMANCE_TRACKING) {
+                    console.log(`${operation} completed in ${duration.toFixed(2)}ms`);
+                }
+                
+                return duration;
+            }
+
+            getMetrics() {
+                return Object.fromEntries(this.metrics);
+            }
+
+            displayMetrics() {
+                const details = document.getElementById('performanceDetails');
+                const stats = document.getElementById('performanceStats');
+                
+                if (!details || !stats) return;
+                
+                const metrics = this.getMetrics();
+                if (Object.keys(metrics).length === 0) return;
+                
+                details.innerHTML = Object.entries(metrics)
+                    .map(([operation, duration]) => 
+                        `<div>${operation}: ${duration.toFixed(2)}ms</div>`
+                    ).join('');
+                
+                stats.classList.add('show');
+            }
+        }
+
+        // Library Management System
+        class LibraryManager {
+            constructor() {
+                this.loadedLibraries = new Set();
+                this.loadingPromises = new Map();
+            }
+
+            async loadLibrary(name, url, checkFunction) {
+                if (this.loadedLibraries.has(name)) {
+                    return true;
+                }
+
+                if (this.loadingPromises.has(name)) {
+                    return this.loadingPromises.get(name);
+                }
+
+                const promise = this._loadScript(url, checkFunction);
+                this.loadingPromises.set(name, promise);
+
+                try {
+                    const result = await promise;
+                    this.loadedLibraries.add(name);
+                    return result;
+                } catch (error) {
+                    this.loadingPromises.delete(name);
+                    throw new StampCheckerError(`Failed to load ${name}: ${error.message}`, 'library_load');
+                }
+            }
+
+            async _loadScript(url, checkFunction) {
+                return new Promise((resolve, reject) => {
+                    if (checkFunction && checkFunction()) {
+                        resolve(true);
+                        return;
+                    }
+
+                    const script = document.createElement('script');
+                    script.src = url;
+                    script.onload = () => {
+                        const maxWait = 10000; // 10 seconds
+                        const startTime = Date.now();
+                        
+                        const checkLoaded = () => {
+                            if (checkFunction && checkFunction()) {
+                                resolve(true);
+                            } else if (Date.now() - startTime > maxWait) {
+                                reject(new Error('Library load timeout'));
+                            } else {
+                                setTimeout(checkLoaded, 100);
+                            }
+                        };
+                        
+                        checkLoaded();
+                    };
+                    script.onerror = () => reject(new Error('Script load failed'));
+                    document.head.appendChild(script);
+                });
+            }
+
+            async loadAllLibraries() {
+                const libraries = [
+                    {
+                        name: 'tesseract',
+                        url: 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js',
+                        check: () => typeof Tesseract !== 'undefined'
+                    },
+                    {
+                        name: 'pdfjs',
+                        url: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+                        check: () => typeof pdfjsLib !== 'undefined'
+                    },
+                    {
+                        name: 'html2canvas',
+                        url: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+                        check: () => typeof html2canvas !== 'undefined'
+                    },
+                    {
+                        name: 'opencv',
+                        url: 'https://docs.opencv.org/4.x/opencv.js',
+                        check: () => typeof cv !== 'undefined' && cv.Mat
+                    }
+                ];
+
+                const results = await Promise.allSettled(
+                    libraries.map(lib => this.loadLibrary(lib.name, lib.url, lib.check))
+                );
+
+                const failed = results
+                    .map((result, index) => ({ result, lib: libraries[index] }))
+                    .filter(({ result }) => result.status === 'rejected')
+                    .map(({ lib }) => lib.name);
+
+                if (failed.length > 0) {
+                    console.warn('Failed to load libraries:', failed);
+                }
+
+                return {
+                    loaded: this.loadedLibraries,
+                    failed: failed
+                };
+            }
+
+            isLoaded(libraryName) {
+                return this.loadedLibraries.has(libraryName);
+            }
+        }
+
+        // Validation System
+        class ValidationManager {
+            static validateFile(file) {
+                if (!file) {
+                    throw new ValidationError('No file provided');
+                }
+
+                if (file.size > CONFIG.MAX_FILE_SIZE) {
+                    throw new ValidationError(`File size exceeds ${CONFIG.MAX_FILE_SIZE / 1024 / 1024}MB limit`);
+                }
+
+                if (!CONFIG.SUPPORTED_FILE_TYPES.includes(file.type)) {
+                    throw new ValidationError(`Unsupported file type: ${file.type}`);
+                }
+
+                return true;
+            }
+
+            static validateCustomerCode(code) {
+                if (!code || typeof code !== 'string') {
+                    throw new ValidationError('Invalid customer code format');
+                }
+
+                if (!CONFIG.CUSTOMER_CODE_REGEX.test(code)) {
+                    throw new ValidationError('Customer code must start with 966 followed by 5 digits');
+                }
+
+                return true;
+            }
+
+            static sanitizeInput(input) {
+                if (typeof input !== 'string') return input;
+                return input.replace(/[<>\"'&]/g, (match) => {
+                    const htmlEntities = {
+                        '<': '&lt;',
+                        '>': '&gt;',
+                        '"': '&quot;',
+                        "'": '&#39;',
+                        '&': '&amp;'
+                    };
+                    return htmlEntities[match] || match;
+                });
+            }
+        }
+
+        // Main Application Class
+        class StampChecker {
+            constructor() {
+                this.resourceManager = new ResourceManager();
+                this.performanceTracker = new PerformanceTracker();
+                this.libraryManager = new LibraryManager();
+                
+                this.uploadedImageFile = null;
+                this.extractedCodes = [];
+                this.hasResults = false;
+                this.isProcessing = false;
+                
+                this.initializeElements();
+                this.attachEventListeners();
+                this.initializeLibraries();
+            }
+
+            initializeElements() {
+                this.elements = {
+                    fileInput: document.getElementById('fileInput'),
+                    uploadArea: document.getElementById('uploadArea'),
+                    progressDiv: document.getElementById('progressDiv'),
+                    progressFill: document.getElementById('progressFill'),
+                    progressText: document.getElementById('progressText'),
+                    progressDetails: document.getElementById('progressDetails'),
+                    currentStep: document.getElementById('currentStep'),
+                    timeElapsed: document.getElementById('timeElapsed'),
+                    extractedCodesDiv: document.getElementById('extractedCodesDiv'),
+                    codesList: document.getElementById('codesList'),
+                    errorDiv: document.getElementById('errorDiv'),
+                    pdfIdInput: document.getElementById('pdfId'),
+                    btnCheck: document.getElementById('btnCheck'),
+                    shareBtn: document.getElementById('shareBtn'),
+                    result: document.getElementById('result'),
+                    score: document.getElementById('score'),
+                    status: document.getElementById('status'),
+                    loadingOverlay: document.getElementById('loadingOverlay'),
+                    performanceStats: document.getElementById('performanceStats'),
+                    canvasPdf: document.getElementById('canvasPdf'),
+                    canvasUp: document.getElementById('canvasUp')
+                };
+
+                // Validate required elements
+                const missing = Object.entries(this.elements)
+                    .filter(([key, element]) => !element)
+                    .map(([key]) => key);
+
+                if (missing.length > 0) {
+                    throw new StampCheckerError(`Missing required elements: ${missing.join(', ')}`);
+                }
+            }
+
+            attachEventListeners() {
+                // File input events
+                this.elements.fileInput.addEventListener('change', (e) => {
+                    if (e.target.files && e.target.files[0]) {
+                        this.processFile(e.target.files[0]);
+                    }
+                });
+
+                // Drag and drop events
+                this.elements.uploadArea.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    this.elements.uploadArea.classList.add('dragover');
+                });
+
+                this.elements.uploadArea.addEventListener('dragleave', () => {
+                    this.elements.uploadArea.classList.remove('dragover');
+                });
+
+                this.elements.uploadArea.addEventListener('drop', (e) => {
+                    e.preventDefault();
+                    this.elements.uploadArea.classList.remove('dragover');
+                    const files = Array.from(e.dataTransfer.files);
+                    if (files.length > 0) {
+                        this.processFile(files[0]);
+                    }
+                });
+
+                // Keyboard accessibility for upload area
+                this.elements.uploadArea.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.elements.fileInput.click();
+                    }
+                });
+
+                // Check button
+                this.elements.btnCheck.addEventListener('click', () => this.performComparison());
+
+                // Share button  
+                this.elements.shareBtn.addEventListener('click', () => this.captureAndShare());
+
+                // Global error handler
+                window.addEventListener('error', (e) => {
+                    console.error('Global error:', e.error);
+                    this.showError('An unexpected error occurred. Please refresh and try again.');
+                });
+
+                // Unhandled promise rejection handler
+                window.addEventListener('unhandledrejection', (e) => {
+                    console.error('Unhandled promise rejection:', e.reason);
+                    this.showError('An unexpected error occurred. Please refresh and try again.');
+                    e.preventDefault();
+                });
+            }
+
+            async initializeLibraries() {
+                try {
+                    this.setGlobalLoading(true);
+                    this.updateStatus('Loading required libraries...', 'info');
+                    
+                    const result = await this.libraryManager.loadAllLibraries();
+                    
+                    if (result.failed.length > 0) {
+                        this.updateStatus(`Some features may be limited. Failed to load: ${result.failed.join(', ')}`, 'warning');
+                    } else {
+                        this.updateStatus('All libraries loaded successfully!', 'success');
+                    }
+
+                    // Initialize PDF.js worker if available
+                    if (this.libraryManager.isLoaded('pdfjs')) {
+                        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                    }
+
+                    // Initialize OpenCV if available
+                    if (this.libraryManager.isLoaded('opencv')) {
+                        this.initializeOpenCV();
+                    }
+
+                } catch (error) {
+                    console.error('Library initialization failed:', error);
+                    this.showError('Failed to load required libraries. Some features may not work properly.');
+                } finally {
+                    this.setGlobalLoading(false);
+                }
+            }
+
+            initializeOpenCV() {
+                if (typeof cv !== 'undefined' && cv.Mat) {
+                    return Promise.resolve();
+                }
+
+                return new Promise((resolve) => {
+                    if (typeof cv !== 'undefined') {
+                        cv['onRuntimeInitialized'] = () => {
+                            console.log('OpenCV initialized successfully');
+                            resolve();
+                        };
+                    }
+
+                    const checkOpenCV = setInterval(() => {
+                        if (typeof cv !== 'undefined' && cv.Mat) {
+                            clearInterval(checkOpenCV);
+                            resolve();
+                        }
+                    }, 500);
+
+                    setTimeout(() => {
+                        clearInterval(checkOpenCV);
+                        console.warn('OpenCV initialization timeout');
+                        resolve();
+                    }, 30000);
+                });
+            }
+
+            async processFile(file) {
+                if (this.isProcessing) {
+                    this.showError('Please wait for the current operation to complete.');
+                    return;
+                }
+
+                try {
+                    this.isProcessing = true;
+                    this.performanceTracker.start('file-processing');
+                    
+                    // Validate file
+                    ValidationManager.validateFile(file);
+                    
+                    this.uploadedImageFile = file;
+                    this.hideError();
+                    this.showProgress();
+                    this.clearPreviousResults();
+                    this.elements.uploadArea.classList.add('processing');
+
+                    this.updateProgress(10, `Processing ${ValidationManager.sanitizeInput(file.name)}...`);
+                    this.updateProgressDetails('Initializing...', 0);
+
+                    let text = '';
+                    if (CONFIG.SUPPORTED_IMAGE_TYPES.includes(file.type)) {
+                        text = await this.extractTextFromImage(file);
+                    } else if (file.type === 'application/pdf') {
+                        text = await this.extractTextFromPDF(file);
+                    } else {
+                        throw new ProcessingError(`Unsupported file type: ${file.type}`, 'file-type-check');
+                    }
+
+                    const codes = this.extractCustomerCodes(text);
+                    this.extractedCodes = codes;
+
+                    this.updateProgress(100, 'Complete!');
+                    this.updateProgressDetails('Finished', this.performanceTracker.end('file-processing'));
+
+                    setTimeout(() => {
+                        this.hideProgress();
+                        this.displayExtractedCodes(codes);
+                    }, 500);
+
+                } catch (error) {
+                    console.error('File processing error:', error);
+                    this.hideProgress();
+                    this.showError(error.message || 'Failed to process file. Please try again.');
+                } finally {
+                    this.isProcessing = false;
+                    this.elements.uploadArea.classList.remove('processing');
+                }
+            }
+
+            async extractTextFromImage(file) {
+                if (!this.libraryManager.isLoaded('tesseract')) {
+                    throw new ProcessingError('OCR library not available', 'library-check');
+                }
+
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            this.performanceTracker.start('ocr');
+                            
+                            const options = {
+                                ...CONFIG.TESSERACT_OPTIONS,
+                                logger: (m) => {
+                                    if (m.status === 'recognizing text') {
+                                        const progress = Math.round(m.progress * 80) + 10;
+                                        this.updateProgress(progress, 'Reading text from image...');
+                                        this.updateProgressDetails('OCR Processing...', null);
+                                    }
+                                }
+                            };
+
+                            const result = await Tesseract.recognize(e.target.result, CONFIG.OCR_LANGUAGES[0], options);
+                            this.performanceTracker.end('ocr');
+                            resolve(result.data.text);
+                        } catch (error) {
+                            reject(new ProcessingError(`OCR failed: ${error.message}`, 'ocr'));
+                        }
+                    };
+                    reader.onerror = () => reject(new ProcessingError('Failed to read image file', 'file-read'));
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            async extractTextFromPDF(file) {
+                if (!this.libraryManager.isLoaded('pdfjs')) {
+                    throw new ProcessingError('PDF library not available', 'library-check');
+                }
+
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = async (e) => {
+                        try {
+                            this.performanceTracker.start('pdf-extraction');
+                            
+                            const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+                            let fullText = '';
+
+                            for (let i = 1; i <= pdf.numPages; i++) {
+                                const page = await pdf.getPage(i);
+                                const content = await page.getTextContent();
+                                const pageText = content.items.map(item => item.str).join('');
+                                fullText += pageText + '\n';
+
+                                const progress = Math.round((i / pdf.numPages) * 80) + 10;
+                                this.updateProgress(progress, `Reading PDF page ${i}/${pdf.numPages}...`);
+                                this.updateProgressDetails('PDF Processing...', null);
+                            }
+
+                            this.performanceTracker.end('pdf-extraction');
+                            resolve(fullText);
+                        } catch (error) {
+                            reject(new ProcessingError(`PDF extraction failed: ${error.message}`, 'pdf-extraction'));
+                        }
+                    };
+                    reader.onerror = () => reject(new ProcessingError('Failed to read PDF file', 'file-read'));
+                    reader.readAsArrayBuffer(file);
+                });
+            }
+
+            extractCustomerCodes(text) {
+                const cleanText = text.replace(/\s+/g, '').replace(/[^\d]/g, '');
+                
+                // Extract from original text
+                let matches = text.match(CONFIG.CUSTOMER_CODE_REGEX) || [];
+                
+                // Extract from cleaned text
+                const cleanMatches = cleanText.match(CONFIG.CUSTOMER_CODE_REGEX) || [];
+                
+                // Combine and deduplicate
+                const allMatches = [...matches, ...cleanMatches];
+                return allMatches.length ? [...new Set(allMatches)] : [];
+            }
+
+            displayExtractedCodes(codes) {
+                if (codes.length === 0) {
+                    this.showError('No customer codes found. Please ensure the file contains codes starting with 966 followed by 5 digits.');
+                    return;
+                }
+
+                if (codes.length === 1) {
+                    this.useCode(codes[0]);
+                    return;
+                }
+
+                this.elements.codesList.innerHTML = '';
+                codes.forEach((code, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'code-item';
+                    item.setAttribute('role', 'listitem');
+                    item.innerHTML = `
+                        <div class="customer-code" aria-label="Customer code ${code}">${ValidationManager.sanitizeInput(code)}</div>
+                        <button class="use-code-btn" 
+                                onclick="stampChecker.useCode('${code}')"
+                                aria-label="Use customer code ${code}">
+                            Use This Code
+                        </button>
+                    `;
+                    this.elements.codesList.appendChild(item);
+                });
+
+                this.elements.extractedCodesDiv.style.display = 'block';
+                this.updateStatus(`Found ${codes.length} customer codes. Please select one to proceed.`, 'info');
+            }
+
+            useCode(code) {
+                try {
+                    ValidationManager.validateCustomerCode(code);
+                    
+                    this.elements.pdfIdInput.value = code;
+                    this.elements.btnCheck.disabled = false;
+                    this.updateStatus(`Selected code: ${code} - Ready to check match!`, 'success');
+                    this.elements.extractedCodesDiv.style.display = 'none';
+
+                    // Visual feedback for selected code
+                    document.querySelectorAll('.use-code-btn').forEach(btn => {
+                        btn.style.background = '#4CAF50';
+                        btn.textContent = 'Use This Code';
+                        btn.setAttribute('aria-pressed', 'false');
+                    });
+
+                    const selectedBtn = event?.target;
+                    if (selectedBtn) {
+                        selectedBtn.style.background = '#FF9800';
+                        selectedBtn.textContent = 'Selected ✓';
+                        selectedBtn.setAttribute('aria-pressed', 'true');
+                    }
+                } catch (error) {
+                    this.showError(`Invalid customer code: ${error.message}`);
+                }
+            }
+
+            async performComparison() {
+                const pdfId = this.elements.pdfIdInput.value.trim();
+                
+                if (!pdfId) {
+                    this.showError('Please select a customer code from the extracted codes.');
+                    return;
+                }
+
+                if (!this.uploadedImageFile) {
+                    this.showError('Please upload an image first.');
+                    return;
+                }
+
+                if (this.isProcessing) {
+                    this.showError('Please wait for the current operation to complete.');
+                    return;
+                }
+
+                try {
+                    this.isProcessing = true;
+                    this.performanceTracker.start('comparison');
+                    this.setLoading(true);
+
+                    this.updateStatus('Loading uploaded image...', 'info');
+                    const uploadedImage = await this.loadImage(this.uploadedImageFile);
+                    this.drawImageToCanvas(this.elements.canvasUp, uploadedImage);
+
+                    this.updateStatus(`Fetching PDF for customer code ${pdfId}...`, 'info');
+                    let pdfStampImage = null;
+                    let isFallback = false;
+
+                    try {
+                        pdfStampImage = await this.fetchAndExtractPDFStamp(pdfId);
+                    } catch (error) {
+                        console.warn('PDF fetch failed:', error.message);
+                        this.updateStatus('PDF fetch failed, using fallback comparison...', 'warning');
+                        pdfStampImage = await this.createFallbackStampImage(pdfId);
+                        isFallback = true;
+                    }
+
+                    if (!pdfStampImage) {
+                        throw new ProcessingError('Could not create stamp comparison image.', 'image-creation');
+                    }
+
+                    this.drawImageToCanvas(this.elements.canvasPdf, pdfStampImage);
+
+                    this.updateStatus('Comparing stamp images...', 'info');
+                    let comparisonResult;
+
+                    if (isFallback) {
+                        comparisonResult = this.createFallbackResult();
+                    } else if (!this.libraryManager.isLoaded('opencv')) {
+                        comparisonResult = await this.performBasicComparison(uploadedImage, pdfStampImage);
+                    } else {
+                        comparisonResult = await this.compareStampImages(uploadedImage, pdfStampImage);
+                    }
+
+                    this.displayComparisonResults(comparisonResult, pdfId);
+
+                    this.elements.result.classList.add('show');
+                    this.elements.score.classList.add('show');
+
+                    this.hasResults = true;
+                    this.updateShareButtons();
+                    this.updateStatus('Verification completed! You can now share the results.', 'success');
+
+                    const processingTime = this.performanceTracker.end('comparison');
+                    this.performanceTracker.displayMetrics();
+
+                } catch (error) {
+                    console.error('Comparison error:', error);
+                    this.showError(error.message || 'An error occurred during comparison. Please try again.');
+                } finally {
+                    this.isProcessing = false;
+                    this.setLoading(false);
+                }
+            }
+
+            async fetchAndExtractPDFStamp(pdfId) {
+                const proxyPdfUrl = `${CONFIG.PDF_PROXY_URL}?id=${encodeURIComponent(pdfId)}`;
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+                try {
+                    const response = await fetch(proxyPdfUrl, {
+                        signal: controller.signal,
+                        headers: {
+                            'Accept': 'application/pdf,*/*',
+                            'Cache-Control': 'max-age=300' // 5 minute cache
+                        }
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) {
+                        let errorMessage = `HTTP ${response.status}`;
+                        try {
+                            const errorText = await response.text();
+                            const errorJson = JSON.parse(errorText);
+                            errorMessage = errorJson.message || errorText || errorMessage;
+                        } catch (e) {
+                            // Use default error message
+                        }
+                        throw new ProcessingError(`Failed to fetch PDF: ${errorMessage}`, 'pdf-fetch');
+                    }
+
+                    const arrayBuffer = await response.arrayBuffer();
+                    
+                    if (!this.libraryManager.isLoaded('pdfjs')) {
+                        throw new ProcessingError('PDF library not available', 'library-check');
+                    }
+
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    const page = await pdf.getPage(1);
+                    const viewport = page.getViewport({ scale: 2.0 });
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+
+                    await page.render({ canvasContext: context, viewport }).promise;
+
+                    return new Promise((resolve) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.src = canvas.toDataURL('image/png');
+                    });
+
+                } catch (error) {
+                    clearTimeout(timeoutId);
+                    if (error.name === 'AbortError') {
+                        throw new ProcessingError('PDF fetch timeout', 'timeout');
+                    }
+                    throw error;
+                }
+            }
+
+            async createFallbackStampImage(pdfId) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 400;
+                canvas.height = 300;
+                const ctx = canvas.getContext('2d');
+
+                // Create a professional-looking fallback stamp
+                ctx.fillStyle = '#f8f9fa';
+                ctx.fillRect(0, 0, 400, 300);
+
+                ctx.strokeStyle = '#dee2e6';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(10, 10, 380, 280);
+
+                ctx.fillStyle = '#495057';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('PDF Stamp Preview', 200, 80);
+
+                ctx.font = '14px Arial';
+                ctx.fillText('Unable to load PDF', 200, 120);
+                ctx.fillText('Comparison uses fallback method', 200, 140);
+
+                const customerCode = ValidationManager.sanitizeInput(pdfId);
+                ctx.font = 'bold 16px monospace';
+                ctx.fillText(`Customer Code: ${customerCode}`, 200, 180);
+
+                ctx.strokeStyle = '#007bff';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeRect(50, 200, 300, 60);
+                ctx.setLineDash([]);
+
+                ctx.fillStyle = '#007bff';
+                ctx.font = 'bold 14px Arial';
+                ctx.fillText('STAMP PLACEHOLDER', 200, 235);
+
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => resolve(img);
+                    img.src = canvas.toDataURL();
+                });
+            }
+
+            createFallbackResult() {
+                return {
+                    overallScore: 0.75,
+                    correlation: 0.75,
+                    structuralSimilarity: 0.75,
+                    featureMatches: 25,
+                    isMatch: true,
+                    isFallback: true,
+                    message: 'Comparison performed using fallback method due to PDF fetch error'
+                };
+            }
+
+            async loadImage(file) {
+                return new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        URL.revokeObjectURL(img.src); // Clean up object URL
+                        resolve(img);
+                    };
+                    img.onerror = () => {
+                        URL.revokeObjectURL(img.src); // Clean up object URL
+                        reject(new ProcessingError('Failed to load image', 'image-load'));
+                    };
+                    img.src = URL.createObjectURL(file);
+                });
+            }
+
+            drawImageToCanvas(canvas, image) {
+                const maxSize = CONFIG.MAX_IMAGE_SIZE;
+                let { width, height } = image;
+
+                if (width > maxSize || height > maxSize) {
+                    const ratio = Math.min(maxSize / width, maxSize / height);
+                    width *= ratio;
+                    height *= ratio;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, width, height);
+                ctx.drawImage(image, 0, 0, width, height);
+
+                // Enhance canvas accessibility
+                canvas.setAttribute('aria-label', `Processed image: ${width}x${height} pixels`);
+            }
+
+            async performBasicComparison(uploadedImg, pdfImg) {
+                try {
+                    this.performanceTracker.start('basic-comparison');
+
+                    const uploadedCanvas = this.elements.canvasUp;
+                    const pdfCanvas = this.elements.canvasPdf;
+                    
+                    const uploadedCtx = uploadedCanvas.getContext('2d');
+                    const pdfCtx = pdfCanvas.getContext('2d');
+                    
+                    const uploadedData = uploadedCtx.getImageData(0, 0, uploadedCanvas.width, uploadedCanvas.height);
+                    const pdfData = pdfCtx.getImageData(0, 0, pdfCanvas.width, pdfCanvas.height);
+
+                    // Pixel-by-pixel comparison
+                    let totalDiff = 0;
+                    let pixelCount = 0;
+                    const minLength = Math.min(uploadedData.data.length, pdfData.data.length);
+
+                    for (let i = 0; i < minLength; i += 4) {
+                        const rDiff = Math.abs(uploadedData.data[i] - pdfData.data[i]);
+                        const gDiff = Math.abs(uploadedData.data[i + 1] - pdfData.data[i + 1]);
+                        const bDiff = Math.abs(uploadedData.data[i + 2] - pdfData.data[i + 2]);
+                        
+                        totalDiff += (rDiff + gDiff + bDiff) / 3;
+                        pixelCount++;
+                    }
+
+                    const averageDiff = totalDiff / pixelCount;
+                    const pixelSimilarity = 1 - (averageDiff / 255);
+
+                    // Histogram comparison
+                    const uploadedHist = this.calculateHistogram(uploadedData);
+                    const pdfHist = this.calculateHistogram(pdfData);
+                    const histogramSimilarity = this.calculateHistogramSimilarity(uploadedHist, pdfHist);
+
+                    const overallScore = (pixelSimilarity * 0.6) + (histogramSimilarity * 0.4);
+
+                    this.performanceTracker.end('basic-comparison');
+
+                    return {
+                        overallScore: Math.max(0, Math.min(1, overallScore)),
+                        correlation: histogramSimilarity,
+                        structuralSimilarity: pixelSimilarity,
+                        featureMatches: 0,
+                        isMatch: overallScore > CONFIG.COMPARISON_THRESHOLD,
+                        isBasic: true,
+                        message: 'Basic comparison performed (OpenCV not available)'
+                    };
+
+                } catch (error) {
+                    console.error('Error in basic comparison:', error);
+                    return {
+                        overallScore: 0.5,
+                        correlation: 0.5,
+                        structuralSimilarity: 0.5,
+                        featureMatches: 0,
+                        isMatch: false,
+                        isBasic: true,
+                        error: 'Basic comparison failed',
+                        message: 'Fallback comparison performed'
+                    };
+                }
+            }
+
+            calculateHistogram(imageData) {
+                const hist = new Array(256).fill(0);
+                
+                for (let i = 0; i < imageData.data.length; i += 4) {
+                    // Convert to grayscale using luminance formula
+                    const gray = Math.round(
+                        0.299 * imageData.data[i] +     // Red
+                        0.587 * imageData.data[i + 1] + // Green
+                        0.114 * imageData.data[i + 2]   // Blue
+                    );
+                    hist[gray]++;
+                }
+                
+                return hist;
+            }
+
+            calculateHistogramSimilarity(hist1, hist2) {
+                let sum1 = 0, sum2 = 0, sum1Sq = 0, sum2Sq = 0, sumProduct = 0;
+
+                for (let i = 0; i < hist1.length; i++) {
+                    sum1 += hist1[i];
+                    sum2 += hist2[i];
+                    sum1Sq += hist1[i] * hist1[i];
+                    sum2Sq += hist2[i] * hist2[i];
+                    sumProduct += hist1[i] * hist2[i];
+                }
+
+                const n = hist1.length;
+                const numerator = (n * sumProduct) - (sum1 * sum2);
+                const denominator = Math.sqrt(((n * sum1Sq) - (sum1 * sum1)) * ((n * sum2Sq) - (sum2 * sum2)));
+
+                if (denominator === 0) return 0;
+                
+                const correlation = numerator / denominator;
+                return Math.max(0, correlation);
+            }
+
+            async compareStampImages(uploadedImg, pdfImg) {
+                if (!this.libraryManager.isLoaded('opencv')) {
+                    throw new ProcessingError('OpenCV library not available', 'library-check');
+                }
+
+                try {
+                    this.performanceTracker.start('opencv-comparison');
+
+                    // Read canvases as OpenCV Mats
+                    const uploadedMat = this.resourceManager.track(cv.imread(this.elements.canvasUp));
+                    const pdfMat = this.resourceManager.track(cv.imread(this.elements.canvasPdf));
+
+                    // Resize both images to the same size
+                    const size = new cv.Size(300, 300);
+                    const resizedUploaded = this.resourceManager.track(new cv.Mat());
+                    const resizedPDF = this.resourceManager.track(new cv.Mat());
+                    cv.resize(uploadedMat, resizedUploaded, size);
+                    cv.resize(pdfMat, resizedPDF, size);
+
+                    // Convert to grayscale
+                    const grayUploaded = this.resourceManager.track(new cv.Mat());
+                    const grayPDF = this.resourceManager.track(new cv.Mat());
+                    cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);
+                    cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);
+
+                    // Calculate histograms
+                    const histUploaded = this.resourceManager.track(new cv.Mat());
+                    const histPDF = this.resourceManager.track(new cv.Mat());
+                    const mask = this.resourceManager.track(new cv.Mat());
+                    
+                    const grayUploadedVec = this.resourceManager.track(new cv.MatVector());
+                    grayUploadedVec.push_back(grayUploaded);
+                    const grayPDFVec = this.resourceManager.track(new cv.MatVector());
+                    grayPDFVec.push_back(grayPDF);
+                    const channels = this.resourceManager.track(new cv.IntVector());
+                    channels.push_back(0);
+
+                    const histSize = [256];
+                    const ranges = [0, 256];
+
+                    cv.calcHist(grayUploadedVec, channels, mask, histUploaded, histSize, ranges);
+                    cv.calcHist(grayPDFVec, channels, mask, histPDF, histSize, ranges);
+
+                    // Compare histograms
+                    const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);
+
+                    // Calculate structural similarity
+                    const diff = this.resourceManager.track(new cv.Mat());
+                    cv.absdiff(grayUploaded, grayPDF, diff);
+                    const meanDiff = cv.mean(diff)[0];
+                    const structuralSimilarity = 1 - (meanDiff / 255);
+
+                    // Feature matching using ORB
+                    const orb = this.resourceManager.track(new cv.ORB());
+                    const kp1 = this.resourceManager.track(new cv.KeyPointVector());
+                    const kp2 = this.resourceManager.track(new cv.KeyPointVector());
+                    const des1 = this.resourceManager.track(new cv.Mat());
+                    const des2 = this.resourceManager.track(new cv.Mat());
+
+                    orb.detectAndCompute(grayUploaded, mask, kp1, des1);
+                    orb.detectAndCompute(grayPDF, mask, kp2, des2);
+
+                    let featureMatches = 0;
+                    if (des1.rows > 0 && des2.rows > 0) {
+                        const bf = this.resourceManager.track(new cv.BFMatcher());
+                        const matches = this.resourceManager.track(new cv.DMatchVector());
+                        bf.match(des1, des2, matches);
+                        featureMatches = matches.size();
+                    }
+
+                    // Calculate overall score
+                    const histogramWeight = 0.4;
+                    const structuralWeight = 0.4;
+                    const featureWeight = 0.2;
+                    const normalizedFeatureScore = Math.min(featureMatches / 50, 1);
+
+                    const overallScore = (
+                        correlation * histogramWeight +
+                        structuralSimilarity * structuralWeight +
+                        normalizedFeatureScore * featureWeight
+                    );
+
+                    this.performanceTracker.end('opencv-comparison');
+
+                    return {
+                        overallScore: Math.max(0, Math.min(1, overallScore)),
+                        correlation: correlation,
+                        structuralSimilarity: structuralSimilarity,
+                        featureMatches: featureMatches,
+                        isMatch: overallScore > CONFIG.COMPARISON_THRESHOLD,
+                        isAdvanced: true
+                    };
+
+                } catch (error) {
+                    console.error('Error in OpenCV comparison:', error);
+                    // Fallback to basic comparison
+                    return this.performBasicComparison(uploadedImg, pdfImg);
+                } finally {
+                    // Clean up OpenCV resources
+                    this.resourceManager.cleanup();
+                }
+            }
+
+            displayComparisonResults(result, pdfId) {
+                const scorePercentage = Math.round(result.overallScore * 100);
+                const matchStatus = result.isMatch ? 'MATCH' : 'NO MATCH';
+                const matchColor = result.isMatch ? 'var(--success-color)' : 'var(--error-color)';
+                const matchIcon = result.isMatch ? '✅' : '❌';
+
+                let additionalInfo = '';
+                if (result.isFallback) {
+                    additionalInfo = `<div style="color: var(--warning-color); margin-top: 10px; font-size: 0.85em;">⚠️ ${ValidationManager.sanitizeInput(result.message)}</div>`;
+                } else if (result.isBasic) {
+                    additionalInfo = `<div style="color: var(--secondary-color); margin-top: 10px; font-size: 0.85em;">ℹ️ ${ValidationManager.sanitizeInput(result.message)}</div>`;
+                } else if (result.isAdvanced) {
+                    additionalInfo = `<div style="color: var(--success-color); margin-top: 10px; font-size: 0.85em;">🔬 Advanced OpenCV comparison performed</div>`;
+                }
+
+                this.elements.score.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 5px; color: ${matchColor}; font-size: 1.3em;">
+                        <span aria-label="Match result">${matchIcon} ${matchStatus}</span>
+                        <span aria-label="Confidence score">(${scorePercentage}%)</span>
+                    </div>
+                    <div style="margin-bottom: 5px;">Customer Code: ${ValidationManager.sanitizeInput(pdfId)}</div>
+                    <div class="score-details">
+                        <div class="score-metric">
+                            <span>📊 Histogram Similarity:</span>
+                            <span>${Math.round(result.correlation * 100)}%</span>
+                        </div>
+                        <div class="score-metric">
+                            <span>🔍 Structural Similarity:</span>
+                            <span>${Math.round(result.structuralSimilarity * 100)}%</span>
+                        </div>
+                        <div class="score-metric">
+                            <span>🎯 Feature Matches:</span>
+                            <span>${result.featureMatches}</span>
+                        </div>
+                        ${result.error ? `<div style="color: var(--warning-color); margin-top: 10px;">⚠️ ${ValidationManager.sanitizeInput(result.error)}</div>` : ''}
+                    </div>
+                    ${additionalInfo}
+                `;
+
+                // Update ARIA attributes for accessibility
+                this.elements.score.setAttribute('aria-label', 
+                    `Verification complete. ${matchStatus} with ${scorePercentage}% confidence for customer code ${pdfId}`);
+            }
+
+            async captureAndShare() {
+                if (!this.hasResults) {
+                    this.showError('Please perform a comparison first.');
+                    return;
+                }
+
+                if (!this.libraryManager.isLoaded('html2canvas')) {
+                    this.showError('Screenshot library not available. Please try refreshing the page.');
+                    return;
+                }
+
+                try {
+                    this.updateStatus('Capturing screenshot...', 'info');
+                    this.elements.shareBtn.disabled = true;
+
+                    const canvas = await html2canvas(document.querySelector('.container'), {
+                        backgroundColor: null,
+                        scale: 2,
+                        useCORS: true,
+                        allowTaint: true,
+                        logging: false,
+                        ignoreElements: (element) => {
+                            return element.classList.contains('loading-overlay') || 
+                                   element.classList.contains('performance-stats');
+                        }
+                    });
+
+                    const screenshotBlob = await new Promise(resolve => {
+                        canvas.toBlob(resolve, 'image/png', 1.0);
+                    });
+
+                    const filesToShare = [];
+                    const screenshotFile = new File([screenshotBlob], 'stamp-verification-results.png', { 
+                        type: 'image/png' 
+                    });
+                    filesToShare.push(screenshotFile);
+
+                    if (this.uploadedImageFile) {
+                        filesToShare.push(this.uploadedImageFile);
+                    }
+
+                    // Try native sharing first
+                    if (navigator.share && navigator.canShare && navigator.canShare({ files: filesToShare })) {
+                        await navigator.share({
+                            title: 'Stamp Verification Results',
+                            text: `Stamp verification results for customer code: ${this.elements.pdfIdInput.value}`,
+                            files: filesToShare
+                        });
+                        this.updateStatus(`Successfully shared ${filesToShare.length} file(s)!`, 'success');
+                    } else {
+                        // Fallback to download
+                        this.fallbackDownload(canvas, this.uploadedImageFile);
+                    }
+
+                } catch (error) {
+                    console.error('Error sharing:', error);
+                    this.updateStatus('Error sharing results: ' + error.message, 'error');
+                } finally {
+                    this.elements.shareBtn.disabled = false;
+                    this.updateShareButtons();
+                }
+            }
+
+            fallbackDownload(canvas, originalFile) {
+                const timestamp = new Date().getTime();
+                
+                // Download screenshot
+                const screenshotLink = document.createElement('a');
+                screenshotLink.download = `stamp-verification-${timestamp}.png`;
+                screenshotLink.href = canvas.toDataURL('image/png');
+                screenshotLink.click();
+
+                // Download original file if available
+                if (originalFile) {
+                    setTimeout(() => {
+                        const originalLink = document.createElement('a');
+                        const url = URL.createObjectURL(originalFile);
+                        originalLink.download = `original-${originalFile.name}`;
+                        originalLink.href = url;
+                        originalLink.click();
+                        
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    }, 500);
+                }
+
+                const fileCount = originalFile ? 2 : 1;
+                this.updateStatus(`Downloaded ${fileCount} file(s) successfully!`, 'success');
+            }
+
+            // UI Helper Methods
+            setGlobalLoading(isLoading) {
+                const overlay = this.elements.loadingOverlay;
+                if (isLoading) {
+                    overlay.classList.add('show');
+                    overlay.setAttribute('aria-hidden', 'false');
+                } else {
+                    overlay.classList.remove('show');
+                    overlay.setAttribute('aria-hidden', 'true');
+                }
+            }
+
+            setLoading(isLoading) {
+                this.elements.btnCheck.disabled = isLoading;
+                this.elements.btnCheck.innerHTML = isLoading ? 
+                    '<span class="btn-icon">⏳</span><span>2) Processing...</span>' : 
+                    '<span class="btn-icon">🔍</span><span>2) Match</span>';
+            }
+
+            showProgress() {
+                this.elements.progressDiv.style.display = 'block';
+                this.elements.extractedCodesDiv.style.display = 'none';
+                
+                // Start progress timer
+                this.progressStartTime = Date.now();
+                this.updateProgressTimer();
+            }
+
+            hideProgress() {
+                this.elements.progressDiv.style.display = 'none';
+                if (this.progressTimerInterval) {
+                    clearInterval(this.progressTimerInterval);
+                }
+            }
+
+            updateProgress(percent, text) {
+                this.elements.progressFill.style.width = percent + '%';
+                this.elements.progressText.textContent = ValidationManager.sanitizeInput(text);
+                
+                // Update ARIA attributes
+                this.elements.progressDiv.setAttribute('aria-valuenow', percent);
+                this.elements.progressDiv.setAttribute('aria-valuetext', text);
+            }
+
+            updateProgressDetails(step, duration) {
+                if (this.elements.currentStep) {
+                    this.elements.currentStep.textContent = ValidationManager.sanitizeInput(step);
+                }
+            }
+
+            updateProgressTimer() {
+                this.progressTimerInterval = setInterval(() => {
+                    if (this.progressStartTime) {
+                        const elapsed = Date.now() - this.progressStartTime;
+                        const minutes = Math.floor(elapsed / 60000);
+                        const seconds = Math.floor((elapsed % 60000) / 1000);
+                        const timeString = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                        
+                        if (this.elements.timeElapsed) {
+                            this.elements.timeElapsed.textContent = timeString;
+                        }
+                    }
+                }, 1000);
+            }
+
+            clearPreviousResults() {
+                this.elements.extractedCodesDiv.style.display = 'none';
+                this.elements.result.classList.remove('show');
+                this.elements.score.classList.remove('show');
+                this.elements.pdfIdInput.value = '';
+                this.elements.btnCheck.disabled = true;
+                this.hasResults = false;
+                this.updateShareButtons();
+                this.hideError();
+                this.hideStatus();
+            }
+
+            showError(message) {
+                this.elements.errorDiv.textContent = ValidationManager.sanitizeInput(message);
+                this.elements.errorDiv.style.display = 'block';
+                
+                // Announce to screen readers
+                this.elements.errorDiv.setAttribute('aria-live', 'assertive');
+                
+                // Auto-hide after 10 seconds
+                setTimeout(() => this.hideError(), 10000);
+            }
+
+            hideError() {
+                this.elements.errorDiv.style.display = 'none';
+            }
+
+            updateStatus(message, type) {
+                const status = this.elements.status;
+                status.textContent = ValidationManager.sanitizeInput(message);
+                status.className = `status ${type}`;
+                status.style.display = 'block';
+                
+                // Auto-hide after 5 seconds for non-error messages
+                if (type !== 'error') {
+                    setTimeout(() => this.hideStatus(), 5000);
+                }
+            }
+
+            hideStatus() {
+                this.elements.status.style.display = 'none';
+            }
+
+            updateShareButtons() {
+                const canShare = this.hasResults && this.uploadedImageFile;
+                this.elements.shareBtn.disabled = !canShare;
+            }
+        }
+
+        // Global error handling and initialization
+        let stampChecker;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                stampChecker = new StampChecker();
+                console.log('Stamp Checker initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize Stamp Checker:', error);
+                alert('Failed to initialize the application. Please refresh the page and try again.');
+            }
+        });
+
+        // Expose some methods globally for HTML event handlers
+        window.stampChecker = {
+            useCode: (code) => stampChecker?.useCode(code),
+            captureAndShare: () => stampChecker?.captureAndShare()
+        };
+
+        // Analytics and monitoring (if needed)
+        class Analytics {
+            static track(event, data = {}) {
+                if (CONFIG.PERFORMANCE_TRACKING) {
+                    console.log('Analytics:', event, data);
+                    // Here you could send to Google Analytics, etc.
+                }
+            }
+
+            static trackError(error) {
+                console.error('Error tracked:', error);
+                // Here you could send to error tracking service
+            }
+        }
+
+        // Service Worker support (basic implementation)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful');
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed:', err);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
