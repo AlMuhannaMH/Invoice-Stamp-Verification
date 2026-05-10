@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<!--
+  Invoice Stamp Checker — v2.0
+  ════════════════════════════════════════════════════════════════════
+  CHANGELOG vs v1
+  ────────────────────────────────────────────────────────────────────
+  PHASE 1 — Critical Bug Fixes
+    [FIX-1] Memory leak: URL.createObjectURL is now revoked in loadImage()
+            after the image is fully loaded.
+    [FIX-2] OpenCV cleanup on error paths: all Mat/Vector objects are
+            declared before the try-block and deleted in a finally-block,
+            so cleanup always runs even when an exception is thrown.
+    [FIX-3] Implicit `event` global in useCode(): replaced with an
+            explicit `clickedBtn` parameter passed from the onclick handler.
+    [FIX-4] XSS via innerHTML: pdfId and result.message are sanitised
+            through a dedicated escapeHtml() helper before insertion.
+    [FIX-5] OpenCV init race condition: removed the redundant setInterval
+            polling; now uses only the onRuntimeInitialized callback plus
+            a single, clean DOMContentLoaded guard.
+
+  PHASE 2 — Refactoring & Modularity
+    [REF-1] All magic numbers replaced with named CONFIG constants.
+    [REF-2] Code split into clearly labelled logical modules:
+              STATE · CONFIG · OCR · NETWORK · COMPARISON · UI · SHARE
+    [REF-3] Duplicate regex in extractCustomerCodes() removed; a single
+            pattern runs on both raw and stripped text.
+    [REF-4] clearPreviousResults() now blanks both canvases so stale
+            images never persist across runs.
+
+  PHASE 3 — UX & Robustness
+    [UX-1]  Request-deduplication guard: isProcessing flag prevents
+            concurrent "Match" calls from double-firing.
+    [UX-2]  Errors auto-hide after ERROR_DISPLAY_MS (same rhythm as
+            status messages) and are also cleared on the next action.
+    [UX-3]  isFallback detection replaced with an explicit boolean flag
+            (pdfFetchFailed) set at the point of failure — no fragile
+            base64 string comparison.
+    [UX-4]  Canvas clearing is now handled inside clearPreviousResults()
+            using a helper clearCanvas().
+
+  PHASE 4 — Enhancement
+    [ENH-1] Progress bar shows granular, labelled steps with percentages.
+    [ENH-2] fetchAndExtractPDFStamp() retries up to MAX_PDF_RETRIES times
+            with exponential back-off before giving up.
+    [ENH-3] Full UI design refresh:
+              • Google Font pairing (Nunito + JetBrains Mono)
+              • CSS custom-property theme (--brand, --surface, etc.)
+              • Animated header shimmer & step badges
+              • Smooth card transitions and result reveal animation
+              • Score ring replaces plain text percentage
+              • Upload area drag-state polish
+              • Fully responsive — mobile first
+  ════════════════════════════════════════════════════════════════════
+-->
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Stamp Checker</title>
+
+  <!-- External libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+  <!-- Google Fonts: Nunito (UI) + JetBrains Mono (codes) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Design tokens ──────────────────────────────────────────── */
+    :root {
+      --brand:        #EDA740;
+      --brand-dark:   #c8872a;
+      --brand-light:  #fdf3e3;
+      --green:        #2ecc71;
+      --green-dark:   #27ae60;
+      --red:          #e74c3c;
+      --blue:         #3498db;
+      --blue-dark:    #2980b9;
+      --surface:      #ffffff;
+      --bg:           #f4f6f9;
+      --border:       #e2e8f0;
+      --text:         #2d3748;
+      --text-muted:   #718096;
+      --radius:       10px;
+      --shadow:       0 4px 20px rgba(0,0,0,0.08);
+      --font:         'Nunito', sans-serif;
+      --mono:         'JetBrains Mono', monospace;
+      --transition:   0.25s ease;
+    }
+
+    /* ── Reset & base ───────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      min-height: 100vh;
+      padding: 20px 16px 40px;
+      color: var(--text);
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    .header {
+      background: var(--brand);
+      border-radius: var(--radius);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: var(--shadow);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Shimmer sweep on load */
+    .header::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%; width: 60%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+      animation: shimmer 2s ease-out 0.3s forwards;
+    }
+    @keyframes shimmer {
+      to { left: 160%; }
+    }
+
+    .logo {
+      height: 72px;
+      width: auto;
+      flex-shrink: 0;
+      border-radius: 6px;
+    }
+
+    .header-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      letter-spacing: -0.3px;
+      line-height: 1.2;
+    }
+    .header-subtitle {
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.75);
+      margin-top: 3px;
+      font-weight: 600;
+    }
+
+    /* ── Cards ──────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+    }
+
+    /* ── Step badges ────────────────────────────────────────────── */
+    .step-label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .step-badge {
+      background: var(--brand);
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.75rem;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+    }
+    .step-badge.done  { background: var(--green); }
+    .step-badge.blue  { background: var(--blue); }
+    .step-label span  { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+
+    /* ── Upload area ────────────────────────────────────────────── */
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 22px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color var(--transition), background var(--transition);
+    }
+    .upload-area:hover,
+    .upload-area.dragover {
+      border-color: var(--green);
+      background: #f0fff5;
+    }
+    .upload-area.dragover { background: #e6ffee; }
+
+    .upload-hint {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+    }
+
+    .file-input { display: none; }
+
+    /* ── Buttons ────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 22px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+      min-width: 148px;
+      height: 42px;
+      letter-spacing: 0.2px;
+    }
+    .btn:hover:not(:disabled) {
+      background: var(--green-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(46,204,113,0.3);
+    }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled {
+      background: #cbd5e0;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .btn-blue { background: var(--blue); }
+    .btn-blue:hover:not(:disabled) {
+      background: var(--blue-dark);
+      box-shadow: 0 4px 12px rgba(52,152,219,0.3);
+    }
+
+    .btn-upload {
+      background: var(--brand);
+      color: #fff;
+    }
+    .btn-upload:hover:not(:disabled) {
+      background: var(--brand-dark);
+      box-shadow: 0 4px 12px rgba(237,167,64,0.4);
+    }
+
+    .button-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* ── Progress ───────────────────────────────────────────────── */
+    .progress-wrap { display: none; }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .progress-label {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+    .progress-pct {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--green);
+      font-family: var(--mono);
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 7px;
+      background: var(--bg);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--green), var(--blue));
+      width: 0%;
+      transition: width 0.35s ease;
+      border-radius: 4px;
+    }
+
+    /* ── Code chips ─────────────────────────────────────────────── */
+    .extracted-codes { display: none; }
+
+    .codes-header {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .code-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .code-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      transition: border-color var(--transition);
+    }
+    .code-item:hover { border-color: var(--green); }
+
+    .code-value {
+      font-family: var(--mono);
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 1px;
+    }
+
+    .btn-use {
+      background: var(--green);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      font-family: var(--font);
+      cursor: pointer;
+      transition: background var(--transition);
+      width: auto;
+      height: auto;
+    }
+    .btn-use:hover     { background: var(--green-dark); }
+    .btn-use.selected  { background: var(--brand); cursor: default; }
+
+    /* ── Code display input ─────────────────────────────────────── */
+    .code-input-wrap { display: flex; align-items: center; gap: 8px; }
+    .code-input-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+    .customer-code-input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: var(--mono);
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--text);
+      background: var(--bg);
+      outline: none;
+    }
+
+    /* ── Result canvases ────────────────────────────────────────── */
+    .result-grid {
+      display: none;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .result-grid.show {
+      display: grid;
+      animation: fadeUp 0.4s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .canvas-card {
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 14px;
+      text-align: center;
+    }
+    .canvas-card-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .canvas-card canvas {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* ── Score panel ────────────────────────────────────────────── */
+    #score {
+      display: none;
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      animation: fadeUp 0.4s ease;
+    }
+    #score.show { display: block; }
+
+    #score.match    { background: #e8fdf0; border: 1px solid #a3e6b8; }
+    #score.no-match { background: #fdf0ef; border: 1px solid #f5b8b2; }
+
+    .score-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .score-verdict {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .score-icon { font-size: 2rem; }
+
+    .score-label {
+      font-size: 1.4rem;
+      font-weight: 800;
+      line-height: 1;
+    }
+    .score-label.match    { color: var(--green-dark); }
+    .score-label.no-match { color: var(--red); }
+
+    .score-code {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    /* Score ring */
+    .score-ring-wrap { flex-shrink: 0; }
+    .score-ring {
+      width: 72px;
+      height: 72px;
+    }
+    .score-ring circle {
+      fill: none;
+      stroke-width: 7;
+    }
+    .ring-bg    { stroke: #e2e8f0; }
+    .ring-fill  { stroke-dasharray: 188; stroke-dashoffset: 188; stroke-linecap: round;
+                  transition: stroke-dashoffset 0.8s ease; }
+    .ring-match    .ring-fill { stroke: var(--green); }
+    .ring-no-match .ring-fill { stroke: var(--red); }
+    .ring-text {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 700;
+      fill: var(--text);
+    }
+
+    .score-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+    .stat-item { text-align: center; }
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .stat-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    .score-notice {
+      margin-top: 12px;
+      font-size: 0.8rem;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-weight: 600;
+    }
+    .score-notice.warn { background: #fff8e6; color: #b7791f; border: 1px solid #f6d77b; }
+    .score-notice.info { background: #ebf4fb; color: #1a6fa0; border: 1px solid #a8d8f0; }
+
+    /* ── Alert & status ─────────────────────────────────────────── */
+    .alert {
+      display: none;
+      padding: 11px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .alert.error   { background: #fdf0ef; color: #9b2c2c; border: 1px solid #f5b8b2; }
+    .alert.success { background: #e8fdf0; color: #1a6b3c; border: 1px solid #a3e6b8; }
+    .alert.info    { background: #ebf4fb; color: #1a6fa0; border: 1px solid #a8d8f0; }
+
+    /* ── Responsive ─────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .result-grid { grid-template-columns: 1fr; }
+      .score-stats { grid-template-columns: repeat(3, 1fr); }
+      .header { flex-direction: column; text-align: center; }
+      .logo { height: 56px; }
+    }
+    @media (max-width: 420px) {
+      .button-row { flex-direction: column; align-items: center; }
+      .btn { width: 100%; max-width: 280px; }
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container" id="screenshot-target">
+
+    <!-- ── Header ─────────────────────────────────────────────── -->
+    <header class="header">
+      <img src="logo.png" alt="Company Logo" class="logo" onerror="this.style.display='none'" />
+      <div>
+        <div class="header-title">Invoice Stamp Checker</div>
+        <div class="header-subtitle">Verify stamp authenticity against customer records</div>
+      </div>
+    </header>
+
+    <!-- ── Step 1: Upload ─────────────────────────────────────── -->
+    <section class="card" aria-label="Step 1: Upload file">
+      <div class="step-label">
+        <div class="step-badge" id="badge1">1</div>
+        <span>Upload invoice photo or PDF</span>
+      </div>
+
+      <div class="upload-area" id="uploadArea"
+           role="button" tabindex="0"
+           aria-label="Click or drag a file here to upload">
+        <button class="btn btn-upload" type="button"
+                onclick="fileInput.click()">📤 Take Photo / Choose File</button>
+        <p class="upload-hint">Supports images (JPG, PNG, WEBP) and PDF — drag & drop also works</p>
+      </div>
+
+      <input type="file" id="fileInput" class="file-input"
+             accept="image/*,.pdf" capture="environment"
+             aria-hidden="true" />
+    </section>
+
+    <!-- ── Progress ───────────────────────────────────────────── -->
+    <div class="card progress-wrap" id="progressDiv" aria-live="polite" aria-atomic="true">
+      <div class="progress-header">
+        <span class="progress-label" id="progressText">Processing…</span>
+        <span class="progress-pct" id="progressPct">0%</span>
+      </div>
+      <div class="progress-bar" role="progressbar"
+           aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <!-- ── Error / status alerts ──────────────────────────────── -->
+    <div class="alert error" id="errorDiv" role="alert"></div>
+    <div class="alert"       id="statusDiv" role="status" aria-live="polite"></div>
+
+    <!-- ── Extracted codes list ───────────────────────────────── -->
+    <div class="card extracted-codes" id="extractedCodesDiv">
+      <p class="codes-header">Multiple codes found — select one</p>
+      <div class="code-list" id="codesList"></div>
+    </div>
+
+    <!-- ── Step 2: Code display + Match ───────────────────────── -->
+    <section class="card" aria-label="Step 2: Match stamp">
+      <div class="step-label">
+        <div class="step-badge blue" id="badge2">2</div>
+        <span>Customer code &amp; stamp match</span>
+      </div>
+
+      <div class="code-input-wrap">
+        <span class="code-input-icon">🪪</span>
+        <input id="pdfId" type="text" class="customer-code-input"
+               placeholder="Customer code will appear here"
+               readonly aria-label="Extracted customer code" />
+      </div>
+
+      <div class="button-row" style="margin-top:14px">
+        <button id="btnCheck" class="btn" disabled type="button">🔍 Match Stamp</button>
+        <button id="shareBtn" class="btn btn-blue" disabled type="button"
+                onclick="captureAndShare()">📱 Share Results</button>
+      </div>
+    </section>
+
+    <!-- ── Step 3: Result canvases ────────────────────────────── -->
+    <div class="result-grid" id="result" aria-label="Comparison result images">
+      <div class="canvas-card">
+        <p class="canvas-card-title">📄 PDF Stamp</p>
+        <canvas id="canvasPdf"></canvas>
+      </div>
+      <div class="canvas-card">
+        <p class="canvas-card-title">🖼️ Your Image</p>
+        <canvas id="canvasUp"></canvas>
+      </div>
+    </div>
+
+    <!-- ── Score panel ─────────────────────────────────────────── -->
+    <div id="score" aria-live="polite"></div>
+
+  </main><!-- /.container -->
+
+  <script>
+  'use strict';
+  /* ════════════════════════════════════════════════════════════════
+     CONFIG  [REF-1] — all magic numbers in one place
+     ════════════════════════════════════════════════════════════════ */
+  const CONFIG = Object.freeze({
+    CUSTOMER_CODE_PATTERN : /966\d{5}/g,     // codes starting with 966 + 5 digits
+    CANVAS_MAX_PX         : 400,             // max side length when drawing to canvas
+    PDF_RENDER_SCALE      : 2.0,             // pdf.js render scale for stamp extraction
+    COMPARISON_SIZE       : 300,             // OpenCV resize target (square)
+    FEATURE_NORM_COUNT    : 50,              // denominator for normalising ORB matches
+    WEIGHT_HISTOGRAM      : 0.4,
+    WEIGHT_STRUCTURAL     : 0.4,
+    WEIGHT_FEATURE        : 0.2,
+    MATCH_THRESHOLD_CV    : 0.70,            // OpenCV path
+    MATCH_THRESHOLD_BASIC : 0.60,            // basic pixel-diff path
+    BASIC_PIXEL_WEIGHT    : 0.6,
+    BASIC_HIST_WEIGHT     : 0.4,
+    MAX_PDF_RETRIES       : 3,               // [ENH-2] retry attempts for PDF fetch
+    PDF_RETRY_BASE_MS     : 800,             // back-off seed in ms
+    STATUS_HIDE_MS        : 5000,            // auto-hide delay for status toasts
+    ERROR_HIDE_MS         : 7000,            // [UX-2] auto-hide delay for errors
+    PDFJS_WORKER          : 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  });
+
+  /* ════════════════════════════════════════════════════════════════
+     STATE — single source of truth
+     ════════════════════════════════════════════════════════════════ */
+  const State = {
+    uploadedFile    : null,   // File object from upload
+    extractedCodes  : [],     // codes found in the uploaded file
+    hasResults      : false,  // whether a comparison has been shown
+    isOpenCVReady   : false,  // [FIX-5] set only via onRuntimeInitialized
+    isProcessing    : false,  // [UX-1] deduplication guard
+    pdfFetchFailed  : false,  // [UX-3] explicit flag instead of fragile base64 check
+    _errorTimer     : null,   // timer handle for auto-hiding errors
+    _statusTimer    : null,   // timer handle for auto-hiding status
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+     DOM REFS — cache once
+     ════════════════════════════════════════════════════════════════ */
+  const DOM = {
+    fileInput        : document.getElementById('fileInput'),
+    uploadArea       : document.getElementById('uploadArea'),
+    progressDiv      : document.getElementById('progressDiv'),
+    progressFill     : document.getElementById('progressFill'),
+    progressText     : document.getElementById('progressText'),
+    progressPct      : document.getElementById('progressPct'),
+    extractedCodes   : document.getElementById('extractedCodesDiv'),
+    codesList        : document.getElementById('codesList'),
+    errorDiv         : document.getElementById('errorDiv'),
+    statusDiv        : document.getElementById('statusDiv'),
+    pdfIdInput       : document.getElementById('pdfId'),
+    btnCheck         : document.getElementById('btnCheck'),
+    shareBtn         : document.getElementById('shareBtn'),
+    canvasPdf        : document.getElementById('canvasPdf'),
+    canvasUp         : document.getElementById('canvasUp'),
+    resultGrid       : document.getElementById('result'),
+    scorePanel       : document.getElementById('score'),
+    badge1           : document.getElementById('badge1'),
+    badge2           : document.getElementById('badge2'),
+  };
+
+  /* ════════════════════════════════════════════════════════════════
+     OPENCV INIT  [FIX-5] — single initialisation path, no race
+     ════════════════════════════════════════════════════════════════ */
+  (function initOpenCV() {
+    function markReady() { State.isOpenCVReady = true; }
+
+    if (typeof cv !== 'undefined') {
+      // cv object already present
+      if (cv.Mat) {
+        markReady();
+      } else {
+        // WASM not yet compiled — attach callback once
+        cv['onRuntimeInitialized'] = markReady;
+      }
+    } else {
+      // cv script hasn't loaded yet — wait for it via the global callback
+      window['onOpenCvReady'] = markReady;
+    }
+  })();
+
+  /* ════════════════════════════════════════════════════════════════
+     PDF.JS WORKER
+     ════════════════════════════════════════════════════════════════ */
+  pdfjsLib.GlobalWorkerOptions.workerSrc = CONFIG.PDFJS_WORKER;
+
+  /* ════════════════════════════════════════════════════════════════
+     UI HELPERS
+     ════════════════════════════════════════════════════════════════ */
+  /** Sanitise a string for safe insertion into innerHTML [FIX-4] */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function showError(msg) {
+    clearTimeout(State._errorTimer);
+    DOM.errorDiv.textContent = msg;   // textContent — no HTML, no XSS risk
+    DOM.errorDiv.style.display = 'block';
+    DOM.errorDiv.className = 'alert error';
+    State._errorTimer = setTimeout(hideError, CONFIG.ERROR_HIDE_MS); // [UX-2]
+  }
+  function hideError() {
+    DOM.errorDiv.style.display = 'none';
+  }
+
+  /**
+   * @param {string} msg
+   * @param {'success'|'info'|'error'} type
+   */
+  function showStatus(msg, type = 'info') {
+    clearTimeout(State._statusTimer);
+    DOM.statusDiv.textContent = msg;
+    DOM.statusDiv.className = `alert ${type}`;
+    DOM.statusDiv.style.display = 'block';
+    State._statusTimer = setTimeout(() => {
+      DOM.statusDiv.style.display = 'none';
+    }, CONFIG.STATUS_HIDE_MS);
+  }
+
+  function showProgress() {
+    DOM.progressDiv.style.display = 'block';
+  }
+  function hideProgress() {
+    DOM.progressDiv.style.display = 'none';
+  }
+  /** [ENH-1] granular progress with label + percentage */
+  function updateProgress(pct, label) {
+    const clamped = Math.max(0, Math.min(100, pct));
+    DOM.progressFill.style.width       = clamped + '%';
+    DOM.progressFill.parentElement.setAttribute('aria-valuenow', clamped);
+    DOM.progressText.textContent       = label;
+    DOM.progressPct.textContent        = clamped + '%';
+  }
+
+  /** Clear a canvas completely [UX-4] */
+  function clearCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.width  = 1;
+    canvas.height = 1;
+  }
+
+  function clearPreviousResults() {
+    DOM.extractedCodes.style.display = 'none';
+    DOM.resultGrid.classList.remove('show');
+    DOM.scorePanel.classList.remove('show');
+    DOM.scorePanel.style.display = 'none';
+    DOM.pdfIdInput.value = '';
+    DOM.btnCheck.disabled = true;
+    DOM.shareBtn.disabled = true;
+    State.hasResults    = false;
+    State.pdfFetchFailed = false;
+    clearCanvas(DOM.canvasPdf);  // [REF-4] wipe stale images
+    clearCanvas(DOM.canvasUp);
+    hideError();
+  }
+
+  function setLoading(loading) {
+    // [UX-1] guard is flipped here so we also guard against multiple clicks
+    State.isProcessing = loading;
+    DOM.btnCheck.disabled = loading;
+    DOM.btnCheck.textContent = loading ? '⏳ Processing…' : '🔍 Match Stamp';
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     OCR MODULE
+     ════════════════════════════════════════════════════════════════ */
+  async function extractTextFromImage(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          updateProgress(10, 'Initialising OCR engine…');
+          const result = await Tesseract.recognize(e.target.result, 'eng', {
+            logger: (m) => {
+              if (m.status === 'recognizing text') {
+                const pct = Math.round(m.progress * 75) + 10;
+                updateProgress(pct, `OCR: reading text… ${Math.round(m.progress * 100)}%`);
+              }
+            },
+          });
+          resolve(result.data.text);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read image file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function extractTextFromPDF(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          updateProgress(10, 'Opening PDF…');
+          const pdf = await pdfjsLib.getDocument({ data: e.target.result }).promise;
+          let fullText = '';
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page    = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            fullText += content.items.map((it) => it.str).join('') + '\n';
+            const pct = Math.round((i / pdf.numPages) * 75) + 10;
+            updateProgress(pct, `Reading PDF page ${i} of ${pdf.numPages}…`);
+          }
+          resolve(fullText);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = () => reject(new Error('Failed to read PDF file'));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  /** [REF-3] Single regex, applied to both raw and digit-only text */
+  function extractCustomerCodes(rawText) {
+    const cleanText = rawText.replace(/\s+/g, '').replace(/[^\d]/g, '');
+    const pattern = CONFIG.CUSTOMER_CODE_PATTERN;
+
+    // reset lastIndex since we reuse the same regex instance
+    pattern.lastIndex = 0;
+    const fromRaw   = rawText.match(pattern) ?? [];
+    pattern.lastIndex = 0;
+    const fromClean = cleanText.match(pattern) ?? [];
+
+    return [...new Set([...fromRaw, ...fromClean])];
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     FILE PROCESSING ORCHESTRATOR
+     ════════════════════════════════════════════════════════════════ */
+  async function processFile(file) {
+    State.uploadedFile = file;
+    hideError();
+    showProgress();
+    clearPreviousResults();
+
+    try {
+      updateProgress(5, `Loading "${file.name}"…`);
+      let text = '';
+
+      if (file.type.startsWith('image/')) {
+        text = await extractTextFromImage(file);
+      } else if (file.type === 'application/pdf') {
+        text = await extractTextFromPDF(file);
+      } else {
+        throw new Error(`Unsupported file type: "${file.type}". Please upload an image or PDF.`);
+      }
+
+      updateProgress(90, 'Searching for customer codes…');
+      const codes = extractCustomerCodes(text);
+      State.extractedCodes = codes;
+
+      updateProgress(100, 'Done!');
+      setTimeout(() => {
+        hideProgress();
+        displayExtractedCodes(codes);
+        DOM.badge1.textContent = '✓';
+        DOM.badge1.className = 'step-badge done';
+      }, 400);
+
+    } catch (err) {
+      hideProgress();
+      showError(err.message ?? 'An error occurred while processing the file.');
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     CODE SELECTION UI
+     ════════════════════════════════════════════════════════════════ */
+  function displayExtractedCodes(codes) {
+    if (codes.length === 0) {
+      showError('No customer codes found (format: 966XXXXX). Check the file and try again.');
+      return;
+    }
+
+    // Auto-select when only one code found
+    if (codes.length === 1) {
+      selectCode(codes[0]);
+      showStatus(`Code ${codes[0]} selected automatically.`, 'success');
+      return;
+    }
+
+    // Show picker
+    DOM.codesList.innerHTML = '';
+    codes.forEach((code) => {
+      const item = document.createElement('div');
+      item.className = 'code-item';
+
+      const codeEl = document.createElement('span');
+      codeEl.className = 'code-value';
+      codeEl.textContent = code;          // textContent — safe
+
+      const btn = document.createElement('button');
+      btn.className = 'btn-use';
+      btn.textContent = 'Use this code';
+      // [FIX-3] pass explicit references — no implicit `event` global
+      btn.addEventListener('click', () => useCode(code, btn));
+
+      item.append(codeEl, btn);
+      DOM.codesList.appendChild(item);
+    });
+
+    DOM.extractedCodes.style.display = 'block';
+  }
+
+  /** [FIX-3] clickedBtn is an explicit param — no implicit `event` global */
+  function useCode(code, clickedBtn) {
+    selectCode(code);
+
+    // Visual feedback on the clicked button
+    DOM.codesList.querySelectorAll('.btn-use').forEach((b) => {
+      b.textContent = 'Use this code';
+      b.classList.remove('selected');
+    });
+    if (clickedBtn) {
+      clickedBtn.textContent = 'Selected ✓';
+      clickedBtn.classList.add('selected');
+    }
+
+    DOM.extractedCodes.style.display = 'none';
+    showStatus(`Code ${code} selected — ready to match.`, 'success');
+  }
+
+  function selectCode(code) {
+    DOM.pdfIdInput.value  = code;
+    DOM.btnCheck.disabled = false;
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     NETWORK MODULE  [ENH-2] — retry with exponential back-off
+     ════════════════════════════════════════════════════════════════ */
+  async function fetchWithRetry(url, retries = CONFIG.MAX_PDF_RETRIES) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) return res;
+
+        // Parse error body once
+        let errMsg = `HTTP ${res.status}`;
+        try {
+          const body = await res.text();
+          const json = JSON.parse(body);
+          errMsg = json.message ?? body ?? errMsg;
+        } catch { /* ignore parse errors */ }
+
+        // Don't retry on definitive client errors (4xx except 429)
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          throw new Error(`Failed to fetch PDF: ${errMsg}`);
+        }
+
+        throw new Error(errMsg); // will be caught below and retried
+
+      } catch (err) {
+        if (attempt === retries) throw err;
+        const delay = CONFIG.PDF_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+        updateProgress(
+          null,
+          `Fetch failed (attempt ${attempt}/${retries}), retrying in ${delay / 1000}s…`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+
+  async function fetchAndExtractPDFStamp(pdfId) {
+    const url = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(pdfId)}`;
+    const res = await fetchWithRetry(url);
+    const buf = await res.arrayBuffer();
+
+    const pdf      = await pdfjsLib.getDocument({ data: buf }).promise;
+    const page     = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: CONFIG.PDF_RENDER_SCALE });
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = viewport.width;
+    offscreen.height = viewport.height;
+    await page.render({ canvasContext: offscreen.getContext('2d'), viewport }).promise;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.src    = offscreen.toDataURL('image/png');
+    });
+  }
+
+  async function createFallbackStampImage(pdfId) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 400; canvas.height = 300;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0, 0, 400, 300);
+
+    ctx.strokeStyle = '#dee2e6';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, 380, 280);
+
+    ctx.fillStyle = '#718096';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('PDF unavailable — fallback placeholder', 200, 90);
+
+    ctx.font = '700 18px monospace';
+    ctx.fillStyle = '#2d3748';
+    ctx.fillText(escapeHtml(pdfId), 200, 160);  // safe: canvas API, not innerHTML
+
+    ctx.strokeStyle = '#3498db';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(60, 200, 280, 60);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#3498db';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('STAMP PLACEHOLDER', 200, 237);
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.src    = canvas.toDataURL();
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     IMAGE UTILITIES
+     ════════════════════════════════════════════════════════════════ */
+  /** [FIX-1] URL.createObjectURL is always revoked after load */
+  async function loadImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      return await new Promise((resolve, reject) => {
+        const img  = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Failed to decode the uploaded image.'));
+        img.src    = url;
+      });
+    } finally {
+      URL.revokeObjectURL(url); // [FIX-1] always runs, even on error
+    }
+  }
+
+  function drawImageToCanvas(canvas, image) {
+    const max = CONFIG.CANVAS_MAX_PX;
+    let { naturalWidth: w, naturalHeight: h } = image;
+
+    // Fallback for PDF-derived Image objects that expose width/height
+    if (!w) w = image.width;
+    if (!h) h = image.height;
+
+    if (w > max || h > max) {
+      const ratio = Math.min(max / w, max / h);
+      w = Math.round(w * ratio);
+      h = Math.round(h * ratio);
+    }
+
+    canvas.width  = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(image, 0, 0, w, h);
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     COMPARISON MODULE — BASIC (no OpenCV)
+     ════════════════════════════════════════════════════════════════ */
+  function calculateGrayHistogram(imageData) {
+    const hist = new Float64Array(256);
+    const d = imageData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      hist[gray]++;
+    }
+    return hist;
+  }
+
+  function pearsonCorrelation(histA, histB) {
+    const n = histA.length;
+    let sumA = 0, sumB = 0, sumA2 = 0, sumB2 = 0, sumAB = 0;
+    for (let i = 0; i < n; i++) {
+      sumA  += histA[i];
+      sumB  += histB[i];
+      sumA2 += histA[i] * histA[i];
+      sumB2 += histB[i] * histB[i];
+      sumAB += histA[i] * histB[i];
+    }
+    const num = n * sumAB - sumA * sumB;
+    const den = Math.sqrt((n * sumA2 - sumA * sumA) * (n * sumB2 - sumB * sumB));
+    return den === 0 ? 0 : Math.max(0, num / den);
+  }
+
+  async function performBasicComparison() {
+    try {
+      const upCtx  = DOM.canvasUp.getContext('2d');
+      const pdfCtx = DOM.canvasPdf.getContext('2d');
+
+      const upData  = upCtx.getImageData(0, 0, DOM.canvasUp.width,  DOM.canvasUp.height);
+      const pdfData = pdfCtx.getImageData(0, 0, DOM.canvasPdf.width, DOM.canvasPdf.height);
+
+      // Pixel-level mean absolute difference
+      let totalDiff = 0;
+      const minLen  = Math.min(upData.data.length, pdfData.data.length);
+      const pixels  = minLen / 4;
+      for (let i = 0; i < minLen; i += 4) {
+        totalDiff += (
+          Math.abs(upData.data[i]     - pdfData.data[i])   +
+          Math.abs(upData.data[i + 1] - pdfData.data[i + 1]) +
+          Math.abs(upData.data[i + 2] - pdfData.data[i + 2])
+        ) / 3;
+      }
+      const pixelSimilarity = 1 - (totalDiff / pixels / 255);
+
+      // Histogram correlation
+      const histSim = pearsonCorrelation(
+        calculateGrayHistogram(upData),
+        calculateGrayHistogram(pdfData)
+      );
+
+      const W  = CONFIG;
+      const overall = pixelSimilarity * W.BASIC_PIXEL_WEIGHT + histSim * W.BASIC_HIST_WEIGHT;
+
+      return {
+        overallScore       : Math.max(0, Math.min(1, overall)),
+        correlation        : histSim,
+        structuralSimilarity : pixelSimilarity,
+        featureMatches     : 0,
+        isMatch            : overall >= W.MATCH_THRESHOLD_BASIC,
+        isBasic            : true,
+        message            : 'Basic comparison used (OpenCV not available)',
+      };
+    } catch (err) {
+      console.error('[BasicComparison]', err);
+      return { overallScore: 0.5, correlation: 0.5, structuralSimilarity: 0.5,
+               featureMatches: 0, isMatch: false, isBasic: true,
+               error: 'Basic comparison failed', message: 'Fallback result' };
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     COMPARISON MODULE — ADVANCED (OpenCV)
+     [FIX-2] All Mat objects declared before try; deleted in finally
+     ════════════════════════════════════════════════════════════════ */
+  async function compareStampImages() {
+    // Declare all OpenCV objects up front so finally can always delete them
+    let uploadedMat, pdfMat, resizedUp, resizedPdf,
+        grayUp, grayPdf, grayUpVec, grayPdfVec,
+        channels, mask, histUp, histPdf, diff,
+        orb, kp1, kp2, des1, des2;
+
+    try {
+      uploadedMat = cv.imread(DOM.canvasUp);
+      pdfMat      = cv.imread(DOM.canvasPdf);
+
+      const size = new cv.Size(CONFIG.COMPARISON_SIZE, CONFIG.COMPARISON_SIZE);
+      resizedUp  = new cv.Mat();
+      resizedPdf = new cv.Mat();
+      cv.resize(uploadedMat, resizedUp,  size);
+      cv.resize(pdfMat,      resizedPdf, size);
+
+      grayUp  = new cv.Mat();
+      grayPdf = new cv.Mat();
+      cv.cvtColor(resizedUp,  grayUp,  cv.COLOR_RGBA2GRAY);
+      cv.cvtColor(resizedPdf, grayPdf, cv.COLOR_RGBA2GRAY);
+
+      grayUpVec  = new cv.MatVector();  grayUpVec.push_back(grayUp);
+      grayPdfVec = new cv.MatVector();  grayPdfVec.push_back(grayPdf);
+      channels   = new cv.IntVector();  channels.push_back(0);
+
+      mask    = new cv.Mat();
+      histUp  = new cv.Mat();
+      histPdf = new cv.Mat();
+      cv.calcHist(grayUpVec,  channels, mask, histUp,  [256], [0, 256]);
+      cv.calcHist(grayPdfVec, channels, mask, histPdf, [256], [0, 256]);
+
+      const correlation = cv.compareHist(histUp, histPdf, cv.HISTCMP_CORREL);
+
+      diff = new cv.Mat();
+      cv.absdiff(grayUp, grayPdf, diff);
+      const structuralSimilarity = 1 - (cv.mean(diff)[0] / 255);
+
+      // ORB feature matching
+      orb = new cv.ORB();
+      kp1 = new cv.KeyPointVector();
+      kp2 = new cv.KeyPointVector();
+      des1 = new cv.Mat();
+      des2 = new cv.Mat();
+      orb.detectAndCompute(grayUp,  mask, kp1, des1);
+      orb.detectAndCompute(grayPdf, mask, kp2, des2);
+
+      let featureMatches = 0;
+      if (des1.rows > 0 && des2.rows > 0) {
+        const bf      = new cv.BFMatcher();
+        const matches = new cv.DMatchVector();
+        bf.match(des1, des2, matches);
+        featureMatches = matches.size();
+        matches.delete();
+        bf.delete();
+      }
+
+      const normFeature = Math.min(featureMatches / CONFIG.FEATURE_NORM_COUNT, 1);
+      const overall = (
+        correlation           * CONFIG.WEIGHT_HISTOGRAM +
+        structuralSimilarity  * CONFIG.WEIGHT_STRUCTURAL +
+        normFeature           * CONFIG.WEIGHT_FEATURE
+      );
+
+      return {
+        overallScore        : Math.max(0, Math.min(1, overall)),
+        correlation,
+        structuralSimilarity,
+        featureMatches,
+        isMatch             : overall >= CONFIG.MATCH_THRESHOLD_CV,
+      };
+
+    } catch (err) {
+      console.error('[OpenCVComparison]', err);
+      return {
+        overallScore: 0.5, correlation: 0.5, structuralSimilarity: 0.5,
+        featureMatches: 0, isMatch: false,
+        error: 'OpenCV comparison failed — basic comparison performed',
+      };
+
+    } finally {
+      // [FIX-2] Always clean up — even if an exception was thrown mid-way
+      const safeDelete = (obj) => { try { if (obj) obj.delete(); } catch (_) {} };
+      [uploadedMat, pdfMat, resizedUp, resizedPdf,
+       grayUp, grayPdf, grayUpVec, grayPdfVec,
+       channels, mask, histUp, histPdf, diff,
+       orb, kp1, kp2, des1, des2].forEach(safeDelete);
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     RESULT DISPLAY
+     ════════════════════════════════════════════════════════════════ */
+  function displayComparisonResults(result, pdfId) {
+    const pct     = Math.round(result.overallScore * 100);
+    const isMatch = result.isMatch;
+
+    // Score ring offset: circumference ≈ 2π × 30 ≈ 188.5
+    const C      = 188;
+    const offset = C - (pct / 100) * C;
+    const ringClass = isMatch ? 'ring-match' : 'ring-no-match';
+
+    // [FIX-4] Sanitise all user-derived strings before inserting as HTML
+    const safePdfId  = escapeHtml(pdfId);
+    const safeMsg    = result.message ? escapeHtml(result.message) : '';
+    const safeErr    = result.error   ? escapeHtml(result.error)   : '';
+
+    let noticeHTML = '';
+    if (result.isFallback) {
+      noticeHTML = `<div class="score-notice warn">⚠️ ${safeMsg}</div>`;
+    } else if (result.isBasic) {
+      noticeHTML = `<div class="score-notice info">ℹ️ ${safeMsg}</div>`;
+    }
+    if (safeErr) {
+      noticeHTML += `<div class="score-notice warn">⚠️ ${safeErr}</div>`;
+    }
+
+    DOM.scorePanel.className = isMatch ? 'match' : 'no-match';
+    DOM.scorePanel.innerHTML = `
+      <div class="score-top">
+        <div class="score-verdict">
+          <span class="score-icon">${isMatch ? '✅' : '❌'}</span>
+          <div>
+            <div class="score-label ${isMatch ? 'match' : 'no-match'}">
+              ${isMatch ? 'MATCH' : 'NO MATCH'}
+            </div>
+            <div class="score-code">Code: ${safePdfId}</div>
+          </div>
+        </div>
+        <div class="score-ring-wrap">
+          <svg class="score-ring ${ringClass}" viewBox="0 0 72 72" aria-label="${pct}% similarity">
+            <circle class="ring-bg"   cx="36" cy="36" r="30"/>
+            <circle class="ring-fill" cx="36" cy="36" r="30"
+                    stroke-dashoffset="${offset}"
+                    transform="rotate(-90 36 36)"/>
+            <text class="ring-text" x="36" y="40" text-anchor="middle">${pct}%</text>
+          </svg>
+        </div>
+      </div>
+
+      <div class="score-stats">
+        <div class="stat-item">
+          <div class="stat-value">${Math.round(result.correlation * 100)}%</div>
+          <div class="stat-label">Histogram</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${Math.round(result.structuralSimilarity * 100)}%</div>
+          <div class="stat-label">Structural</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${result.featureMatches}</div>
+          <div class="stat-label">Features</div>
+        </div>
+      </div>
+
+      ${noticeHTML}
+    `;
+
+    DOM.scorePanel.style.display = 'block';
+    DOM.scorePanel.classList.add('show');
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     MATCH BUTTON HANDLER
+     ════════════════════════════════════════════════════════════════ */
+  DOM.btnCheck.addEventListener('click', async () => {
+    // [UX-1] Deduplication guard — ignore if already running
+    if (State.isProcessing) return;
+
+    const pdfId = DOM.pdfIdInput.value.trim();
+    if (!pdfId) {
+      showError('Please select a customer code first.');
+      return;
+    }
+    if (!State.uploadedFile) {
+      showError('Please upload an image or PDF first.');
+      return;
+    }
+
+    if (!State.isOpenCVReady) {
+      showStatus('OpenCV not ready — using basic comparison.', 'info');
+    }
+
+    setLoading(true);
+    State.pdfFetchFailed = false; // [UX-3] reset flag
+
+    try {
+      showStatus('Loading uploaded image…', 'info');
+      const uploadedImage = await loadImage(State.uploadedFile);
+      drawImageToCanvas(DOM.canvasUp, uploadedImage);
+
+      showStatus(`Fetching PDF stamp for ${pdfId}…`, 'info');
+      let pdfImage;
+      try {
+        pdfImage = await fetchAndExtractPDFStamp(pdfId);
+      } catch (fetchErr) {
+        console.warn('[PDF fetch]', fetchErr.message);
+        State.pdfFetchFailed = true; // [UX-3] explicit flag
+        showStatus('PDF unavailable — using placeholder.', 'info');
+        pdfImage = await createFallbackStampImage(pdfId);
+      }
+
+      drawImageToCanvas(DOM.canvasPdf, pdfImage);
+      DOM.resultGrid.classList.add('show');
+
+      showStatus('Comparing stamps…', 'info');
+      let result;
+
+      if (State.pdfFetchFailed) {
+        // [UX-3] No comparison possible against a placeholder
+        result = {
+          overallScore: 0, correlation: 0, structuralSimilarity: 0,
+          featureMatches: 0, isMatch: false, isFallback: true,
+          message: 'Comparison skipped — PDF could not be fetched from the server.',
+        };
+      } else if (!State.isOpenCVReady) {
+        result = await performBasicComparison();
+      } else {
+        result = await compareStampImages();
+      }
+
+      displayComparisonResults(result, pdfId);
+
+      State.hasResults  = true;
+      DOM.shareBtn.disabled = false;
+      DOM.badge2.textContent = '✓';
+      DOM.badge2.className   = 'step-badge done';
+      showStatus('Verification complete — you can now share the results.', 'success');
+
+    } catch (err) {
+      console.error('[Match handler]', err);
+      showError(err.message ?? 'An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  /* ════════════════════════════════════════════════════════════════
+     SHARE / DOWNLOAD MODULE
+     ════════════════════════════════════════════════════════════════ */
+  async function captureAndShare() {
+    try {
+      DOM.shareBtn.disabled = true;
+      showStatus('Capturing screenshot…', 'info');
+
+      const canvas = await html2canvas(document.querySelector('.container'), {
+        backgroundColor : '#f4f6f9',
+        scale           : 2,
+        useCORS         : true,
+        allowTaint      : true,
+        logging         : false,
+      });
+
+      const blob = await new Promise((res) => canvas.toBlob(res, 'image/png', 1.0));
+      const screenshotFile = new File([blob], 'stamp-verification-results.png', { type: 'image/png' });
+      const filesToShare   = [screenshotFile];
+      if (State.uploadedFile) filesToShare.push(State.uploadedFile);
+
+      if (navigator.share && navigator.canShare?.({ files: filesToShare })) {
+        await navigator.share({
+          title : 'Stamp Verification Results',
+          text  : `Stamp check for code: ${DOM.pdfIdInput.value}`,
+          files : filesToShare,
+        });
+        showStatus(`Shared ${filesToShare.length} file(s) successfully.`, 'success');
+      } else {
+        fallbackDownload(canvas, State.uploadedFile);
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error('[Share]', err);
+        showStatus('Could not share: ' + err.message, 'error');
+      }
+    } finally {
+      DOM.shareBtn.disabled = !State.hasResults;
+    }
+  }
+
+  function fallbackDownload(canvas, originalFile) {
+    const ts = Date.now();
+    const link = document.createElement('a');
+    link.download = `stamp-check-${ts}.png`;
+    link.href     = canvas.toDataURL('image/png');
+    link.click();
+
+    if (originalFile) {
+      const origUrl = URL.createObjectURL(originalFile);
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.download = `original-${originalFile.name}`;
+        a.href     = origUrl;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(origUrl), 1000);
+      }, 500);
+    }
+    showStatus(`Downloaded ${originalFile ? 2 : 1} file(s).`, 'success');
+  }
+
+  /* ════════════════════════════════════════════════════════════════
+     DRAG & DROP
+     ════════════════════════════════════════════════════════════════ */
+  DOM.uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    DOM.uploadArea.classList.add('dragover');
+  });
+  DOM.uploadArea.addEventListener('dragleave', () => {
+    DOM.uploadArea.classList.remove('dragover');
+  });
+  DOM.uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    DOM.uploadArea.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  });
+
+  /* Keyboard accessibility for the upload area */
+  DOM.uploadArea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      DOM.fileInput.click();
+    }
+  });
+
+  DOM.fileInput.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) processFile(file);
+    // Reset so the same file can be re-selected
+    e.target.value = '';
+  });
+  </script>
+</body>
+<!-- v2.0 -->
+</html>
