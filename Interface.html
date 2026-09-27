@@ -1,871 +1,1021 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stamp Match Checker</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://docs.opencv.org/4.x/opencv.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice Stamp Checker</title>
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f5f5;
-            min-height: 100vh;
-            padding: 20px;
-        }
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
 
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            padding: 20px;
-        }
-
-        .upload-area {
-            border: 2px dashed #ddd;
-            border-radius: 8px;
-            padding: 40px 20px;
-            text-align: center;
-            margin-bottom: 20px;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-
-        .upload-area.dragover {
-            border-color: #4CAF50;
-            background: #f0fff0;
-        }
-
-        .upload-area:hover {
-            border-color: #4CAF50;
-            background: #f9fff9;
-        }
-
-        .file-input {
-            display: none;
-        }
-
-        .btn {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 14px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin: 5px;
-            display: inline-block;
-        }
-
-        .btn:hover:not(:disabled) {
-            background: #45a049;
-        }
-
-        .btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background: #2196F3;
-        }
-
-        .btn-secondary:hover:not(:disabled) {
-            background: #1976D2;
-        }
-
-        .progress {
-            display: none;
-            margin: 20px 0;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #edf2f7;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: #4CAF50;
-            width: 0%;
-            transition: width 0.3s;
-        }
-
-        .progress-text {
-            text-align: center;
-            margin-top: 8px;
-            color: #666;
-            font-size: 12px;
-        }
-
-        .extracted-codes {
-            display: none;
-            background: #e8f5e8;
-            border: 1px solid #4CAF50;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-        }
-
-        .code-item {
-            background: white;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            padding: 12px;
-            margin: 8px 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .customer-code {
-            font-size: 16px;
-            font-weight: bold;
-            color: #2d3748;
-            font-family: monospace;
-        }
-
-        .use-code-btn {
-            background: #4CAF50;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-
-        .customer-code-input {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            margin: 15px 0;
-            font-family: monospace;
-            background: #f8f9fa;
-        }
-
-        #result {
-            display: none;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin: 20px 0;
-        }
-
-        #result.show {
-            display: grid;
-        }
-
-        .canvas-container {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            border: 1px solid #eee;
-        }
-
-        .canvas-container h4 {
-            margin-bottom: 10px;
-            color: #333;
-            font-size: 14px;
-        }
-
-        canvas {
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            max-width: 100%;
-            height: auto;
-        }
-
-        #score {
-            background: #4CAF50;
-            color: white;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            font-size: 16px;
-            font-weight: 600;
-            margin: 15px 0;
-            display: none;
-        }
-
-        #score.show {
-            display: block;
-        }
-
-        .error {
-            color: #e53e3e;
-            background: #fed7d7;
-            border: 1px solid #feb2b2;
-            border-radius: 6px;
-            padding: 12px;
-            margin: 10px 0;
-            display: none;
-            font-size: 14px;
-        }
-
-        .status {
-            margin-top: 10px;
-            padding: 8px;
-            border-radius: 4px;
-            display: none;
-            text-align: center;
-            font-size: 12px;
-        }
-
-        .status.success {
-            background-color: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .status.info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-
-        @media (max-width: 768px) {
-            #result {
-                grid-template-columns: 1fr;
-                gap: 15px;
-            }
-            
-            .container {
-                padding: 15px;
-            }
-        }
-    </style>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f3f5f7;
+      min-height: 100vh;
+      padding: 20px;
+      color: #263238;
+    }
+    .container {
+      max-width: 860px;
+      margin: 5px auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.10);
+      padding: 20px;
+    }
+    .header-container {
+      position: relative;
+      min-height: 96px;
+      border: 1px solid #df9c35;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 14px;
+      background: #eda740;
+      display: flex;
+      align-items: center;
+    }
+    .logo { height: 76px; width: auto; max-width: 150px; object-fit: contain; }
+    .header-title {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 22px;
+      white-space: nowrap;
+    }
+    .upload-area {
+      border: 2px dashed #c8cdd2;
+      border-radius: 10px;
+      padding: 18px 10px;
+      text-align: center;
+      margin-bottom: 10px;
+      transition: .2s;
+    }
+    .upload-area.dragover, .upload-area:hover { border-color: #4caf50; background: #f4fff4; }
+    .file-input { display: none; }
+    .btn {
+      width: 180px;
+      min-height: 42px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      font-size: 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: .2s;
+      margin: 5px;
+    }
+    .btn:hover:not(:disabled) { filter: brightness(.92); }
+    .btn:disabled { background: #b8bfc5; cursor: not-allowed; }
+    .btn-secondary { background: #1976d2; }
+    .button-row { display: flex; justify-content: center; gap: 10px; margin: 8px 0; }
+    .progress { display: none; margin: 10px 0; }
+    .progress-bar { width: 100%; height: 9px; background: #edf2f7; border-radius: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #4caf50; width: 0; transition: width .2s; }
+    .progress-text { text-align: center; margin-top: 8px; color: #607d8b; font-size: 12px; }
+    .customer-code-input {
+      width: 100%; padding: 12px; border: 1px solid #d5dadd; border-radius: 7px;
+      font-size: 15px; margin: 7px 0; font-family: monospace; background: #f8f9fa;
+    }
+    .extracted-codes {
+      display: none; background: #edf8ed; border: 1px solid #4caf50;
+      border-radius: 8px; padding: 12px; margin: 8px 0;
+    }
+    .code-item {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 10px; margin: 6px 0; display: flex; justify-content: space-between; align-items: center;
+    }
+    .customer-code { font-size: 16px; font-weight: 700; font-family: monospace; }
+    .use-code-btn { background: #4caf50; color: #fff; border: 0; padding: 7px 12px; border-radius: 5px; cursor: pointer; }
+    #result { display: none; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0; }
+    #result.show { display: grid; }
+    .canvas-container { background: #f8f9fa; border-radius: 9px; padding: 12px; text-align: center; border: 1px solid #e4e7e9; }
+    .canvas-container h4 { margin-bottom: 8px; font-size: 14px; }
+    canvas.preview { border: 1px solid #ddd; border-radius: 5px; max-width: 100%; height: auto; background: #fff; }
+    #score { padding: 16px; border-radius: 9px; text-align: center; margin: 10px 0; display: none; }
+    #score.show { display: block; }
+    .error { color: #842029; background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 7px; padding: 12px; margin: 8px 0; display: none; font-size: 14px; }
+    .status { margin-top: 10px; padding: 9px; border-radius: 5px; display: none; text-align: center; font-size: 12px; }
+    .status.success { background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+    .status.error { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+    .status.info { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+    .notice { font-size: 12px; color: #607d8b; text-align: center; line-height: 1.4; margin-top: 8px; }
+    #rankedResults { display: none; margin: 12px 0; }
+    #rankedResults.show { display: block; }
+    #rankedResults h3 { margin: 0 0 10px; text-align: center; font-size: 16px; }
+    .ranked-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+    .rank-card { border: 1px solid #dfe3e6; border-radius: 9px; background: #fff; padding: 10px; text-align: center; }
+    .rank-card.best { border: 2px solid #1976d2; background: #f3f8ff; }
+    .rank-card canvas { width: 100%; height: 160px; object-fit: contain; background: #fff; border: 1px solid #e5e7e9; border-radius: 5px; }
+    .rank-title { font-weight: 700; margin: 7px 0 4px; }
+    .rank-score { font-size: 13px; color: #455a64; line-height: 1.45; }
+    .rank-badge { display: inline-block; border-radius: 12px; padding: 3px 8px; font-size: 11px; font-weight: 700; background: #e9ecef; color: #343a40; }
+    .rank-card.best .rank-badge { background: #1976d2; color: #fff; }
+    @media (max-width: 768px) {
+      #result { grid-template-columns: 1fr; }
+      .ranked-grid { grid-template-columns: 1fr; }
+      .container { padding: 14px; }
+      .header-title { position: static; transform: none; margin-left: 12px; white-space: normal; }
+    }
+    @media (max-width: 500px) {
+      .button-row { flex-direction: column; align-items: center; }
+      .header-container { flex-direction: column; justify-content: center; }
+      .header-title { margin: 6px 0 0; }
+    }
+  </style>
 </head>
 <body>
-    <div class="container" id="screenshot-target">
-        <div class="upload-area" id="uploadArea">
-            <button class="btn" onclick="document.getElementById('fileInput').click()">
-                📤 Upload File
-            </button>
-        </div>
-        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
-        
-        <div class="progress" id="progressDiv">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">Processing...</div>
-        </div>
-        
-        <div class="error" id="errorDiv"></div>
-        
-        <div class="extracted-codes" id="extractedCodesDiv">
-            <div id="codesList"></div>
-        </div>
-
-        <input id="pdfId" type="text" class="customer-code-input" placeholder="Customer Code" readonly />
-        
-        <button id="btnCheck" class="btn" disabled>🔍 Verify Stamp Match</button>
-        <button class="btn btn-secondary" onclick="captureAndShare()" id="shareBtn" disabled>📱 Share Results</button>
-        
-        <div id="result">
-            <div class="canvas-container">
-                <h4>📄 PDF Stamp</h4>
-                <canvas id="canvasPdf"></canvas>
-            </div>
-            <div class="canvas-container">
-                <h4>🖼️ Your Image</h4>
-                <canvas id="canvasUp"></canvas>
-            </div>
-        </div>
-        
-        <div id="score"></div>
-        <div id="status" class="status"></div>
+  <div class="container" id="screenshot-target">
+    <div class="header-container">
+      <img src="logo.png" alt="Logo" class="logo">
+      <h2 class="header-title">Invoice Stamp Checker</h2>
     </div>
-    
-    <script>
-        // Set PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        // Global variables
-        let uploadedImageFile = null;
-        let extractedCodes = [];
-        let hasResults = false;
-        let isOpenCVReady = false;
+    <div class="upload-area" id="uploadArea">
+      <button class="btn" id="chooseFileBtn">1) 📤 Take photo</button>
+      <div class="notice">Upload an invoice image or PDF. The customer code is read automatically.</div>
+    </div>
+    <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
 
-        // DOM elements
-        const fileInput = document.getElementById('fileInput');
-        const uploadArea = document.getElementById('uploadArea');
-        const progressDiv = document.getElementById('progressDiv');
-        const progressFill = document.getElementById('progressFill');
-        const progressText = document.getElementById('progressText');
-        const extractedCodesDiv = document.getElementById('extractedCodesDiv');
-        const codesList = document.getElementById('codesList');
-        const errorDiv = document.getElementById('errorDiv');
-        const pdfIdInput = document.getElementById('pdfId');
-        const btnCheck = document.getElementById('btnCheck');
-        const shareBtn = document.getElementById('shareBtn');
+    <div class="progress" id="progressDiv">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Processing...</div>
+    </div>
 
-        // Initialize OpenCV with better loading detection
-        function initializeOpenCV() {
-            if (typeof cv !== 'undefined' && cv.Mat) {
-                console.log('OpenCV.js is ready');
-                isOpenCVReady = true;
-                return;
-            }
-            
-            // Set up the callback for when OpenCV loads
-            if (typeof cv !== 'undefined') {
-                cv['onRuntimeInitialized'] = () => {
-                    console.log('OpenCV.js is ready via callback');
-                    isOpenCVReady = true;
-                };
-            }
-            
-            // Also check periodically if OpenCV is available
-            const checkOpenCV = setInterval(() => {
-                if (typeof cv !== 'undefined' && cv.Mat) {
-                    console.log('OpenCV.js detected via polling');
-                    isOpenCVReady = true;
-                    clearInterval(checkOpenCV);
-                }
-            }, 500);
-            
-            // Stop checking after 30 seconds
-            setTimeout(() => {
-                clearInterval(checkOpenCV);
-                if (!isOpenCVReady) {
-                    console.warn('OpenCV.js failed to load within 30 seconds');
-                }
-            }, 30000);
+    <div class="error" id="errorDiv"></div>
+    <div class="extracted-codes" id="extractedCodesDiv"><div id="codesList"></div></div>
+
+    <input id="pdfId" type="text" class="customer-code-input" placeholder="Customer Code" readonly>
+
+    <div class="button-row">
+      <button id="btnCheck" class="btn" disabled>2) 🔍 Match</button>
+      <button class="btn btn-secondary" id="shareBtn" disabled>3) 📱 Share</button>
+    </div>
+
+    <div id="result">
+      <div class="canvas-container">
+        <h4>📄 Best official stamp candidate</h4>
+        <canvas id="canvasPdf" class="preview"></canvas>
+      </div>
+      <div class="canvas-container">
+        <h4>🖼️ Detected invoice stamp</h4>
+        <canvas id="canvasUp" class="preview"></canvas>
+      </div>
+    </div>
+
+    <div id="rankedResults">
+      <h3>Approved stamp comparison ranking</h3>
+      <div id="rankedGrid" class="ranked-grid"></div>
+    </div>
+
+    <div id="score"></div>
+    <div id="status" class="status"></div>
+  </div>
+
+<script>
+'use strict';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const STATUS = Object.freeze({
+  MATCH: 'MATCH',
+  NO_MATCH: 'NO_MATCH',
+  REVIEW: 'REVIEW',
+  NOT_VERIFIED: 'NOT_VERIFIED'
+});
+
+const CONFIG = Object.freeze({
+  pdfRenderScale: 3,
+  analysisSize: 500,
+  minDimension: 55,
+  minAreaRatio: 0.0015,
+  maxAreaRatio: 0.30,
+  maxCandidatesPerPage: 20,
+  maxOfficialCandidates: 6,
+  cropPadding: 0.16,
+  minStampComponents: 18,
+  minStampEdgeDensity: 0.045,
+  maxStampEdgeDensity: 0.42,
+  orbFeatures: 1500,
+  ratioTest: 0.74,
+  minGoodMatches: 10,
+  minInliers: 6,
+  minInlierRatio: 0.30,
+  minOrbScore: 0.07,
+  minShapeScore: 0.28,
+  matchThreshold: 0.50,
+  reviewThreshold: 0.36
+});
+
+let uploadedImageFile = null;
+let hasResults = false;
+let isOpenCVReady = false;
+let lastVerificationResult = null;
+
+const el = id => document.getElementById(id);
+const fileInput = el('fileInput');
+const uploadArea = el('uploadArea');
+const progressDiv = el('progressDiv');
+const progressFill = el('progressFill');
+const progressText = el('progressText');
+const extractedCodesDiv = el('extractedCodesDiv');
+const codesList = el('codesList');
+const errorDiv = el('errorDiv');
+const pdfIdInput = el('pdfId');
+const btnCheck = el('btnCheck');
+const shareBtn = el('shareBtn');
+
+function initializeOpenCV() {
+  const markReady = () => {
+    if (typeof cv !== 'undefined' && cv.Mat) {
+      isOpenCVReady = true;
+      updateStatus('Image comparison engine is ready.', 'success', 1800);
+      return true;
+    }
+    return false;
+  };
+  if (markReady()) return;
+  if (typeof cv !== 'undefined') cv.onRuntimeInitialized = markReady;
+  const timer = setInterval(() => { if (markReady()) clearInterval(timer); }, 400);
+  setTimeout(() => clearInterval(timer), 30000);
+}
+
+document.addEventListener('DOMContentLoaded', initializeOpenCV);
+el('chooseFileBtn').addEventListener('click', () => fileInput.click());
+shareBtn.addEventListener('click', captureAndShare);
+
+uploadArea.addEventListener('dragover', event => {
+  event.preventDefault();
+  uploadArea.classList.add('dragover');
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', event => {
+  event.preventDefault();
+  uploadArea.classList.remove('dragover');
+  const file = event.dataTransfer.files?.[0];
+  if (file) processFile(file);
+});
+fileInput.addEventListener('change', event => {
+  const file = event.target.files?.[0];
+  if (file) processFile(file);
+});
+
+async function processFile(file) {
+  uploadedImageFile = file;
+  hideError();
+  clearPreviousResults();
+  showProgress();
+  try {
+    updateProgress(5, `Processing ${file.name}...`);
+    let text;
+    if (file.type.startsWith('image/')) {
+      text = await extractTextFromImage(file);
+    } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      text = await extractTextFromPDF(file);
+    } else {
+      throw new Error(`Unsupported file type: ${file.type || file.name}`);
+    }
+    const codes = extractCustomerCodes(text);
+    updateProgress(100, 'Customer-code reading complete.');
+    setTimeout(() => {
+      hideProgress();
+      displayExtractedCodes(codes);
+    }, 250);
+  } catch (error) {
+    hideProgress();
+    showError(error.message || 'The uploaded file could not be processed.');
+  }
+}
+
+async function extractTextFromImage(file) {
+  const result = await Tesseract.recognize(file, 'eng', {
+    logger: message => {
+      if (message.status === 'recognizing text') {
+        updateProgress(10 + Math.round(message.progress * 80), 'Reading customer code from image...');
+      }
+    }
+  });
+  return result.data.text || '';
+}
+
+async function extractTextFromPDF(file) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let fullText = '';
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    let pageText = content.items.map(item => item.str).join(' ');
+    if (pageText.replace(/\s/g, '').length < 10) {
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      const ocr = await Tesseract.recognize(canvas, 'eng', {
+        logger: message => {
+          if (message.status === 'recognizing text') {
+            const total = ((pageNumber - 1) + message.progress) / pdf.numPages;
+            updateProgress(10 + Math.round(total * 80), `OCR page ${pageNumber}/${pdf.numPages}...`);
+          }
         }
+      });
+      pageText = ocr.data.text || '';
+    }
+    fullText += pageText + '\n';
+    updateProgress(10 + Math.round(pageNumber / pdf.numPages * 80), `Reading PDF page ${pageNumber}/${pdf.numPages}...`);
+  }
+  return fullText;
+}
 
-        // Initialize when DOM is ready
-        document.addEventListener('DOMContentLoaded', initializeOpenCV);
+function extractCustomerCodes(text) {
+  const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  const normalized = String(text || '').replace(/[٠-٩]/g, digit => arabicDigits.indexOf(digit));
+  const spaced = normalized.match(/(?<!\d)9\s*6\s*6(?:\s*[-–]?\s*\d){5}(?!\d)/g) || [];
+  const compact = normalized.replace(/[^\d]/g, '').match(/966\d{5}/g) || [];
+  return [...new Set([...spaced.map(value => value.replace(/\D/g, '')), ...compact]
+    .filter(value => /^966\d{5}$/.test(value)))];
+}
 
-        // Also try to initialize immediately
-        initializeOpenCV();
+function displayExtractedCodes(codes) {
+  if (!codes.length) {
+    pdfIdInput.value = '';
+    btnCheck.disabled = true;
+    hasResults = false;
+    lastVerificationResult = null;
+    el('result').classList.remove('show');
+    el('rankedResults').classList.remove('show');
+    el('rankedGrid').innerHTML = '';
+    el('score').classList.remove('show');
+    updateShareButtons();
+    showError('Customer code not found. Verification was not performed. Please upload a clearer invoice showing a code in the format 966 followed by 5 digits.');
+    updateStatus('Customer code not found.', 'error');
+    return;
+  }
+  if (codes.length === 1) {
+    selectCode(codes[0]);
+    return;
+  }
+  codesList.innerHTML = '';
+  codes.forEach(code => {
+    const item = document.createElement('div');
+    item.className = 'code-item';
+    const label = document.createElement('div');
+    label.className = 'customer-code';
+    label.textContent = code;
+    const button = document.createElement('button');
+    button.className = 'use-code-btn';
+    button.textContent = 'Use this code';
+    button.addEventListener('click', () => selectCode(code));
+    item.append(label, button);
+    codesList.appendChild(item);
+  });
+  extractedCodesDiv.style.display = 'block';
+}
 
-        // Drag and drop functionality
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
+function selectCode(code) {
+  pdfIdInput.value = code;
+  btnCheck.disabled = false;
+  extractedCodesDiv.style.display = 'none';
+  updateStatus(`Selected customer code: ${code}`, 'success');
+}
 
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
+async function getInvoiceCanvas(file) {
+  if (file.type.startsWith('image/')) {
+    const image = await loadImage(file);
+    return imageToCanvas(image);
+  }
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const page = await pdf.getPage(1);
+    return renderPdfPage(page, 2.5);
+  }
+  throw new Error('Unsupported invoice format.');
+}
 
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = Array.from(e.dataTransfer.files);
-            if (files.length > 0) processFile(files[0]);
-        });
+async function fetchAndRenderOfficialPDF(pdfId) {
+  const url = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(pdfId)}`;
+  const response = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/pdf' } });
+  if (!response.ok) {
+    let details = `HTTP ${response.status}`;
+    try {
+      const text = await response.text();
+      try { details = JSON.parse(text).message || text || details; }
+      catch { details = text || details; }
+    } catch {}
+    throw new Error(`Official stamp document could not be loaded: ${details}`);
+  }
+  const data = await response.arrayBuffer();
+  if (!data.byteLength) throw new Error('Official stamp document is empty.');
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    pages.push({ pageNumber, canvas: await renderPdfPage(page, CONFIG.pdfRenderScale) });
+  }
+  return pages;
+}
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files && e.target.files[0]) {
-                processFile(e.target.files[0]);
-            }
-        });
+async function renderPdfPage(page, scale) {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: context, viewport }).promise;
+  return canvas;
+}
 
-        async function processFile(file) {
-            uploadedImageFile = file;
-            hideError();
-            showProgress();
-            clearPreviousResults();
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load the image.')); };
+    image.src = url;
+  });
+}
 
-            try {
-                updateProgress(10, `Processing ${file.name}...`);
+function imageToCanvas(image) {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0);
+  return canvas;
+}
 
-                let text = '';
-                if (file.type.includes('image')) {
-                    text = await extractTextFromImage(file);
-                } else if (file.type === 'application/pdf') {
-                    text = await extractTextFromPDF(file);
-                } else {
-                    throw new Error(`Unsupported file type: ${file.type}`);
-                }
+function cropCanvas(source, rectangle, paddingRatio = 0) {
+  const px = Math.round(rectangle.width * paddingRatio);
+  const py = Math.round(rectangle.height * paddingRatio);
+  const x = Math.max(0, rectangle.x - px);
+  const y = Math.max(0, rectangle.y - py);
+  const right = Math.min(source.width, rectangle.x + rectangle.width + px);
+  const bottom = Math.min(source.height, rectangle.y + rectangle.height + py);
+  const width = Math.max(1, right - x);
+  const height = Math.max(1, bottom - y);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(source, x, y, width, height, 0, 0, width, height);
+  return canvas;
+}
 
-                const codes = extractCustomerCodes(text);
-                extractedCodes = codes;
+function resizeCanvasWithPadding(source, targetSize = CONFIG.analysisSize) {
+  const canvas = document.createElement('canvas');
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, targetSize, targetSize);
+  const scale = Math.min(targetSize * .9 / source.width, targetSize * .9 / source.height);
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  context.drawImage(source, 0, 0, source.width, source.height,
+    Math.round((targetSize - width) / 2), Math.round((targetSize - height) / 2), width, height);
+  return canvas;
+}
 
-                updateProgress(100, 'Complete!');
-                setTimeout(() => {
-                    hideProgress();
-                    displayExtractedCodes(codes);
-                }, 500);
+function displayCanvas(target, source) {
+  const ratio = Math.min(1, 400 / source.width, 400 / source.height);
+  target.width = Math.max(1, Math.round(source.width * ratio));
+  target.height = Math.max(1, Math.round(source.height * ratio));
+  const context = target.getContext('2d');
+  context.clearRect(0, 0, target.width, target.height);
+  context.drawImage(source, 0, 0, target.width, target.height);
+}
 
-            } catch (error) {
-                hideProgress();
-                showError(error.message);
-            }
+function safeDelete(...objects) {
+  objects.forEach(object => {
+    try { if (object && typeof object.delete === 'function') object.delete(); } catch {}
+  });
+}
+
+function intersectionOverUnion(a, b) {
+  const left = Math.max(a.x, b.x), top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function removeOverlaps(candidates) {
+  const selected = [];
+  [...candidates].sort((a, b) => b.score - a.score).forEach(candidate => {
+    if (!selected.some(current => intersectionOverUnion(candidate, current) > .45)) selected.push(candidate);
+  });
+  return selected;
+}
+
+function collectCandidates(contours, width, height, type) {
+  const result = [];
+  const imageArea = width * height;
+  for (let i = 0; i < contours.size(); i++) {
+    const contour = contours.get(i);
+    const rect = cv.boundingRect(contour);
+    const contourArea = cv.contourArea(contour);
+    contour.delete();
+    const rectArea = rect.width * rect.height;
+    const areaRatio = rectArea / imageArea;
+    const aspect = rect.width / Math.max(1, rect.height);
+    if (rect.width < CONFIG.minDimension || rect.height < CONFIG.minDimension) continue;
+    if (areaRatio < CONFIG.minAreaRatio || areaRatio > CONFIG.maxAreaRatio) continue;
+    if (aspect < .30 || aspect > 3.2) continue;
+    const fill = contourArea / Math.max(1, rectArea);
+    const square = 1 - Math.min(1, Math.abs(1 - aspect));
+    const blueBonus = type === 'blue' ? .35 : 0;
+    const bottomBias = (rect.y + rect.height / 2) / height * .05;
+    result.push({ ...rect, type, areaRatio, score: blueBonus + square * .35 + Math.min(1, fill * 3) * .25 + bottomBias });
+  }
+  return result;
+}
+
+function detectStampCandidates(sourceCanvas) {
+  let src, rgb, hsv, blueMask, gray, darkMask, kernel;
+  let blueContours, darkContours, blueHierarchy, darkHierarchy;
+  try {
+    src = cv.imread(sourceCanvas);
+    rgb = new cv.Mat();
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    hsv = new cv.Mat();
+    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+    const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [85, 30, 20, 0]);
+    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [145, 255, 255, 255]);
+    blueMask = new cv.Mat();
+    cv.inRange(hsv, lowerBlue, upperBlue, blueMask);
+    safeDelete(lowerBlue, upperBlue);
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(9, 9));
+    cv.morphologyEx(blueMask, blueMask, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 3);
+    cv.dilate(blueMask, blueMask, kernel, new cv.Point(-1, -1), 2);
+    blueContours = new cv.MatVector(); blueHierarchy = new cv.Mat();
+    cv.findContours(blueMask, blueContours, blueHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const blue = collectCandidates(blueContours, sourceCanvas.width, sourceCanvas.height, 'blue');
+
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    darkMask = new cv.Mat();
+    cv.threshold(gray, darkMask, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+    cv.morphologyEx(darkMask, darkMask, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 2);
+    cv.dilate(darkMask, darkMask, kernel, new cv.Point(-1, -1), 2);
+    darkContours = new cv.MatVector(); darkHierarchy = new cv.Mat();
+    cv.findContours(darkMask, darkContours, darkHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const dark = collectCandidates(darkContours, sourceCanvas.width, sourceCanvas.height, 'dark');
+    return removeOverlaps([...blue, ...dark]).slice(0, CONFIG.maxCandidatesPerPage);
+  } finally {
+    safeDelete(src, rgb, hsv, blueMask, gray, darkMask, kernel,
+      blueContours, darkContours, blueHierarchy, darkHierarchy);
+  }
+}
+
+function chooseInvoiceCandidate(candidates) {
+  if (!candidates.length) return null;
+  const blue = candidates.filter(candidate => candidate.type === 'blue');
+  return [...(blue.length ? blue : candidates)].sort((a, b) => b.score - a.score)[0];
+}
+
+/*
+ * Reject handwriting, isolated customer codes and document fragments before
+ * they can be treated as approved stamps. A likely stamp normally contains
+ * many separate ink components and a useful concentration of edges.
+ */
+function measureStampLikeness(sourceCanvas) {
+  const normalized = resizeCanvasWithPadding(sourceCanvas, 420);
+  let src, gray, binary, edges, contours, hierarchy;
+  try {
+    src = cv.imread(normalized);
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    binary = new cv.Mat();
+    cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    edges = new cv.Mat();
+    cv.Canny(gray, edges, 70, 160);
+    const edgePixels = cv.countNonZero(edges);
+    const edgeDensity = edgePixels / Math.max(1, edges.rows * edges.cols);
+
+    contours = new cv.MatVector();
+    hierarchy = new cv.Mat();
+    cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+    let components = 0;
+    let meaningfulArea = 0;
+    const totalArea = binary.rows * binary.cols;
+    for (let i = 0; i < contours.size(); i++) {
+      const contour = contours.get(i);
+      const area = cv.contourArea(contour);
+      contour.delete();
+      if (area >= 8 && area <= totalArea * 0.35) {
+        components++;
+        meaningfulArea += area;
+      }
+    }
+
+    const inkRatio = cv.countNonZero(binary) / Math.max(1, totalArea);
+    const aspect = sourceCanvas.width / Math.max(1, sourceCanvas.height);
+    const componentScore = Math.min(1, components / 40);
+    const edgeScore = Math.min(1, edgeDensity / 0.12);
+    const inkScore = inkRatio >= 0.025 && inkRatio <= 0.55 ? 1 : 0;
+    const aspectScore = aspect >= 0.45 && aspect <= 2.25 ? 1 : 0;
+    const score = componentScore * 0.45 + edgeScore * 0.30 + inkScore * 0.15 + aspectScore * 0.10;
+
+    return {
+      components,
+      edgeDensity,
+      inkRatio,
+      meaningfulArea,
+      aspect,
+      score,
+      isLikelyStamp:
+        components >= CONFIG.minStampComponents &&
+        edgeDensity >= CONFIG.minStampEdgeDensity &&
+        edgeDensity <= CONFIG.maxStampEdgeDensity &&
+        inkRatio >= 0.025 &&
+        inkRatio <= 0.55 &&
+        aspect >= 0.55 &&
+        aspect <= 1.85 &&
+        score >= 0.46
+    };
+  } finally {
+    safeDelete(src, gray, binary, edges, contours, hierarchy);
+  }
+}
+
+function prepareStamp(sourceCanvas) {
+  const normalized = resizeCanvasWithPadding(sourceCanvas);
+  let src, gray, equalized, binary;
+  try {
+    src = cv.imread(normalized);
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    equalized = new cv.Mat();
+    cv.equalizeHist(gray, equalized);
+    binary = new cv.Mat();
+    cv.adaptiveThreshold(equalized, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 31, 9);
+    const output = document.createElement('canvas');
+    cv.imshow(output, binary);
+    return output;
+  } finally { safeDelete(src, gray, equalized, binary); }
+}
+
+function createOrb() {
+  try { return new cv.ORB(CONFIG.orbFeatures); }
+  catch { return new cv.ORB(); }
+}
+
+function calculateOrbSimilarity(sourceGray, referenceGray) {
+  let orb, kp1, kp2, des1, des2, mask, matcher, knn, srcPoints, refPoints, hMask, homography;
+  try {
+    orb = createOrb();
+    kp1 = new cv.KeyPointVector(); kp2 = new cv.KeyPointVector();
+    des1 = new cv.Mat(); des2 = new cv.Mat(); mask = new cv.Mat();
+    orb.detectAndCompute(sourceGray, mask, kp1, des1);
+    orb.detectAndCompute(referenceGray, mask, kp2, des2);
+    if (!des1.rows || !des2.rows) return { score: 0, goodMatches: 0, inliers: 0, inlierRatio: 0 };
+    matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+    knn = new cv.DMatchVectorVector();
+    matcher.knnMatch(des1, des2, knn, 2);
+    const accepted = [];
+    for (let i = 0; i < knn.size(); i++) {
+      const pair = knn.get(i);
+      try {
+        if (pair.size() >= 2) {
+          const first = pair.get(0), second = pair.get(1);
+          if (second.distance > 0 && first.distance < CONFIG.ratioTest * second.distance) {
+            accepted.push({ queryIdx: first.queryIdx, trainIdx: first.trainIdx });
+          }
         }
+      } finally { pair.delete(); }
+    }
+    let inliers = 0, inlierRatio = 0;
+    if (accepted.length >= 4) {
+      const sourceCoordinates = [], referenceCoordinates = [];
+      accepted.forEach(match => {
+        const a = kp1.get(match.queryIdx).pt, b = kp2.get(match.trainIdx).pt;
+        sourceCoordinates.push(a.x, a.y); referenceCoordinates.push(b.x, b.y);
+      });
+      srcPoints = cv.matFromArray(accepted.length, 1, cv.CV_32FC2, sourceCoordinates);
+      refPoints = cv.matFromArray(accepted.length, 1, cv.CV_32FC2, referenceCoordinates);
+      hMask = new cv.Mat();
+      homography = cv.findHomography(srcPoints, refPoints, cv.RANSAC, 5, hMask);
+      if (homography && !homography.empty()) {
+        for (let i = 0; i < hMask.rows; i++) if (hMask.ucharPtr(i, 0)[0]) inliers++;
+        inlierRatio = inliers / accepted.length;
+      }
+    }
+    const keypointBase = Math.max(1, Math.min(kp1.size(), kp2.size()));
+    const descriptorScore = Math.min(1, accepted.length / keypointBase);
+    const inlierScore = Math.min(1, inliers / 25);
+    return {
+      score: descriptorScore * .45 + inlierRatio * .30 + inlierScore * .25,
+      goodMatches: accepted.length,
+      inliers,
+      inlierRatio
+    };
+  } finally {
+    safeDelete(orb, kp1, kp2, des1, des2, mask, matcher, knn, srcPoints, refPoints, hMask, homography);
+  }
+}
 
-        async function extractTextFromImage(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = async function(e) {
-                    try {
-                        const result = await Tesseract.recognize(e.target.result, 'eng', {
-                            logger: m => {
-                                if (m.status === 'recognizing text') {
-                                    const progress = Math.round(m.progress * 80) + 10;
-                                    updateProgress(progress, 'Reading text from image...');
-                                }
-                            }
-                        });
-                        resolve(result.data.text);
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                reader.onerror = () => reject(new Error('Failed to read image file'));
-                reader.readAsDataURL(file);
-            });
-        }
+function largestContour(contours) {
+  let largest = null, area = 0;
+  for (let i = 0; i < contours.size(); i++) {
+    const contour = contours.get(i);
+    const current = cv.contourArea(contour);
+    if (current > area) { safeDelete(largest); largest = contour; area = current; }
+    else contour.delete();
+  }
+  return largest;
+}
 
-        async function extractTextFromPDF(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = async function(e) {
-                    try {
-                        const pdf = await pdfjsLib.getDocument({data: e.target.result}).promise;
-                        let fullText = '';
+function calculateShapeSimilarity(source, reference) {
+  let contours1, contours2, hierarchy1, hierarchy2, largest1, largest2;
+  try {
+    contours1 = new cv.MatVector(); contours2 = new cv.MatVector();
+    hierarchy1 = new cv.Mat(); hierarchy2 = new cv.Mat();
+    cv.findContours(source, contours1, hierarchy1, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(reference, contours2, hierarchy2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    largest1 = largestContour(contours1); largest2 = largestContour(contours2);
+    if (!largest1 || !largest2) return 0;
+    const distance = cv.matchShapes(largest1, largest2, cv.CONTOURS_MATCH_I1, 0);
+    return 1 / (1 + Math.max(0, distance));
+  } finally { safeDelete(contours1, contours2, hierarchy1, hierarchy2, largest1, largest2); }
+}
 
-                        for (let i = 1; i <= pdf.numPages; i++) {
-                            const page = await pdf.getPage(i);
-                            const content = await page.getTextContent();
-                            const pageText = content.items.map(item => item.str).join('');
-                            fullText += pageText + '\n';
-                            
-                            const progress = Math.round((i / pdf.numPages) * 80) + 10;
-                            updateProgress(progress, `Reading PDF page ${i}/${pdf.numPages}...`);
-                        }
+function calculatePixelSimilarity(source, reference) {
+  let diff;
+  try {
+    diff = new cv.Mat();
+    cv.absdiff(source, reference, diff);
+    return Math.max(0, Math.min(1, 1 - cv.mean(diff)[0] / 255));
+  } finally { safeDelete(diff); }
+}
 
-                        resolve(fullText);
-                    } catch (error) {
-                        reject(error);
-                    }
-                };
-                reader.onerror = () => reject(new Error('Failed to read PDF file'));
-                reader.readAsArrayBuffer(file);
-            });
-        }
+function compareStamps(invoiceStamp, officialStamp) {
+  const preparedInvoice = prepareStamp(invoiceStamp);
+  const preparedOfficial = prepareStamp(officialStamp);
+  let invoiceMat, officialMat, invoiceGray, officialGray;
+  try {
+    invoiceMat = cv.imread(preparedInvoice); officialMat = cv.imread(preparedOfficial);
+    invoiceGray = new cv.Mat(); officialGray = new cv.Mat();
+    cv.cvtColor(invoiceMat, invoiceGray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(officialMat, officialGray, cv.COLOR_RGBA2GRAY);
+    const orb = calculateOrbSimilarity(invoiceGray, officialGray);
+    const shapeScore = calculateShapeSimilarity(invoiceGray, officialGray);
+    const pixelScore = calculatePixelSimilarity(invoiceGray, officialGray);
+    const overallScore = orb.score * .60 + shapeScore * .25 + pixelScore * .15;
+    const geometricEvidence = orb.goodMatches >= CONFIG.minGoodMatches &&
+      orb.inliers >= CONFIG.minInliers && orb.inlierRatio >= CONFIG.minInlierRatio;
+    let status = STATUS.NO_MATCH;
+    if (geometricEvidence && orb.score >= CONFIG.minOrbScore &&
+        shapeScore >= CONFIG.minShapeScore && overallScore >= CONFIG.matchThreshold) {
+      status = STATUS.MATCH;
+    } else if (overallScore >= CONFIG.reviewThreshold || orb.inliers >= 4) {
+      status = STATUS.REVIEW;
+    }
+    return { status, overallScore, orbScore: orb.score, shapeScore, pixelScore,
+      goodMatches: orb.goodMatches, inliers: orb.inliers, inlierRatio: orb.inlierRatio };
+  } finally { safeDelete(invoiceMat, officialMat, invoiceGray, officialGray); }
+}
 
-        function extractCustomerCodes(text) {
-            const cleanText = text.replace(/\s+/g, '').replace(/[^\d]/g, '');
-            const regex1 = /966\d{5}/g;
-            let matches = text.match(regex1) || [];
-            
-            const regex2 = /966\d{5}/g;
-            const cleanMatches = cleanText.match(regex2) || [];
-            
-            const allMatches = [...matches, ...cleanMatches];
-            return allMatches.length ? [...new Set(allMatches)] : [];
-        }
+function extractOfficialCandidates(pages) {
+  const candidates = [];
+  pages.forEach(page => {
+    detectStampCandidates(page.canvas).forEach((rectangle, index) => {
+      const canvas = cropCanvas(page.canvas, rectangle, CONFIG.cropPadding);
+      const stampMetrics = measureStampLikeness(canvas);
 
-        function displayExtractedCodes(codes) {
-            if (codes.length === 0) {
-                showError('No customer codes found. Please ensure the file contains codes starting with 966 followed by 5 digits.');
-                return;
-            }
+      // Do not allow isolated numbers, handwriting or weak document fragments
+      // to compete as official stamp references.
+      if (!stampMetrics.isLikelyStamp) return;
 
-            // Auto-select if only one code found
-            if (codes.length === 1) {
-                pdfIdInput.value = codes[0];
-                btnCheck.disabled = false;
-                updateStatus(`Selected code: ${codes[0]} - Ready to check match!`, 'success');
-                return;
-            }
+      candidates.push({
+        pageNumber: page.pageNumber,
+        candidateNumber: index + 1,
+        rectangle,
+        canvas,
+        stampMetrics,
+        candidateQuality: stampMetrics.score + (rectangle.type === 'blue' ? 0.08 : 0)
+      });
+    });
+  });
 
-            codesList.innerHTML = '';
-            codes.forEach(code => {
-                const item = document.createElement('div');
-                item.className = 'code-item';
-                item.innerHTML = `
-                    <div class="customer-code">${code}</div>
-                    <button class="use-code-btn" onclick="useCode('${code}')">Use This Code</button>
-                `;
-                codesList.appendChild(item);
-            });
+  return candidates
+    .sort((a, b) => b.candidateQuality - a.candidateQuality)
+    .slice(0, CONFIG.maxOfficialCandidates);
+}
 
-            extractedCodesDiv.style.display = 'block';
-        }
+btnCheck.addEventListener('click', async () => {
+  const pdfId = pdfIdInput.value.trim();
+  hideError();
+  if (!pdfId || !uploadedImageFile) return showError('Upload an invoice and select a customer code first.');
+  if (!isOpenCVReady) return displayNotVerified(pdfId, 'The image comparison engine is not ready.');
+  setLoading(true);
+  try {
+    updateStatus('Detecting the stamp on the invoice...', 'info');
+    const invoiceCanvas = await getInvoiceCanvas(uploadedImageFile);
+    const invoiceCandidates = detectStampCandidates(invoiceCanvas);
+    const invoiceCandidate = chooseInvoiceCandidate(invoiceCandidates);
+    if (!invoiceCandidate) return displayNotVerified(pdfId, 'No reliable stamp region was detected on the invoice.');
+    const invoiceStamp = cropCanvas(invoiceCanvas, invoiceCandidate, CONFIG.cropPadding);
+    displayCanvas(el('canvasUp'), invoiceStamp);
 
-        function useCode(code) {
-            pdfIdInput.value = code;
-            btnCheck.disabled = false;
-            updateStatus(`Selected code: ${code} - Ready to check match!`, 'success');
-            
-            // Hide extracted codes after selection
-            extractedCodesDiv.style.display = 'none';
-            
-            // Highlight the selected code
-            document.querySelectorAll('.use-code-btn').forEach(btn => {
-                btn.style.background = '#4CAF50';
-                btn.textContent = 'Use This Code';
-            });
-            event.target.style.background = '#FF9800';
-            event.target.textContent = 'Selected ✓';
-        }
+    updateStatus(`Loading official document ${pdfId}.pdf...`, 'info');
+    let pages;
+    try { pages = await fetchAndRenderOfficialPDF(pdfId); }
+    catch (error) { return displayNotVerified(pdfId, error.message); }
 
-        // Enhanced Check match functionality with real PDF fetching and comparison
-        btnCheck.addEventListener('click', async () => {
-            const pdfId = pdfIdInput.value.trim();
-            
-            if (!pdfId) {
-                showError('Please select a customer code from the extracted codes.');
-                return;
-            }
-            
-            if (!uploadedImageFile) {
-                showError('Please upload an image first.');
-                return;
-            }
+    updateStatus('Detecting approved stamp candidates...', 'info');
+    const officialCandidates = extractOfficialCandidates(pages);
+    if (!officialCandidates.length) {
+      return displayNotVerified(pdfId, 'The official PDF was loaded, but no reliable approved stamp was detected. Handwriting and customer-code text were excluded.');
+    }
 
-            if (!isOpenCVReady) {
-                // Try to proceed without OpenCV for basic comparison
-                console.warn('OpenCV not ready, proceeding with basic comparison');
-                updateStatus('OpenCV not ready, using basic comparison...', 'info');
-            }
+    updateStatus(`Comparing all ${officialCandidates.length} qualified official stamp candidate(s)...`, 'info');
+    const rankedComparisons = officialCandidates.map(candidate => {
+      const comparison = compareStamps(invoiceStamp, candidate.canvas);
+      const selectionScore = comparison.overallScore * 0.85 + candidate.candidateQuality * 0.15;
+      return { ...comparison, ...candidate, selectionScore };
+    }).sort((a, b) => b.selectionScore - a.selectionScore);
 
-            setLoading(true);
-            
-            try {
-                // Step 1: Load uploaded image
-                updateStatus('Loading uploaded image...', 'info');
-                const uploadedImage = await loadImage(uploadedImageFile);
-                drawImageToCanvas(document.getElementById('canvasUp'), uploadedImage);
+    const best = rankedComparisons[0];
+    if (!best) return displayNotVerified(pdfId, 'The comparison could not be completed.');
 
-                // Step 2: Fetch PDF from server
-                updateStatus(`Fetching PDF for customer code ${pdfId}...`, 'info');
-                const pdfUrl = `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${pdfId}.pdf`;
-                let pdfStampImage = null;
-                
-                try {
-                    pdfStampImage = await fetchAndExtractPDFStamp(pdfUrl);
-                } catch (error) {
-                    console.warn('PDF fetch failed, using fallback:', error.message);
-                    updateStatus('PDF fetch failed due to CORS, using fallback comparison...', 'info');
-                    pdfStampImage = await createFallbackStampImage(pdfUrl);
-                }
-                
-                if (!pdfStampImage) {
-                    throw new Error('Could not create stamp comparison image.');
-                }
+    displayCanvas(el('canvasPdf'), best.canvas);
+    displayRankedComparisons(rankedComparisons);
+    lastVerificationResult = { ...best, pdfId, candidatesChecked: officialCandidates.length };
+    displayComparisonResults(lastVerificationResult);
+    el('result').classList.add('show');
+    hasResults = true;
+    updateShareButtons();
+    updateStatus('Verification completed.', 'success');
+  } catch (error) {
+    console.error(error);
+    displayNotVerified(pdfId, error.message || 'Unexpected verification failure.');
+  } finally { setLoading(false); }
+});
 
-                // Step 3: Draw PDF stamp to canvas
-                drawImageToCanvas(document.getElementById('canvasPdf'), pdfStampImage);
+function displayRankedComparisons(comparisons) {
+  const wrapper = el('rankedResults');
+  const grid = el('rankedGrid');
+  grid.innerHTML = '';
 
-                // Step 4: Compare images using OpenCV or basic method
-                updateStatus('Comparing stamp images...', 'info');
-                let comparisonResult;
-                
-                // Check if we're using fallback image
-                const isFallback = pdfStampImage.src && pdfStampImage.src.startsWith('data:image/png;base64') && 
-                                  document.getElementById('canvasPdf').toDataURL() === pdfStampImage.src;
-                
-                if (isFallback) {
-                    // Use simplified comparison for fallback
-                    comparisonResult = {
-                        overallScore: 0.75, // Assume reasonable match for fallback
-                        correlation: 0.75,
-                        structuralSimilarity: 0.75,
-                        featureMatches: 25,
-                        isMatch: true,
-                        isFallback: true,
-                        message: 'Comparison performed using fallback method due to CORS restrictions'
-                    };
-                } else if (!isOpenCVReady) {
-                    // Use basic comparison without OpenCV
-                    comparisonResult = await performBasicComparison(uploadedImage, pdfStampImage);
-                } else {
-                    // Use full OpenCV comparison
-                    comparisonResult = await compareStampImages(uploadedImage, pdfStampImage);
-                }
-                
-                // Step 5: Display results
-                displayComparisonResults(comparisonResult, pdfId);
-                
-                // Show results section
-                document.getElementById('result').classList.add('show');
-                document.getElementById('score').classList.add('show');
-                
-                hasResults = true;
-                updateShareButtons();
-                updateStatus('Verification completed! You can now share the results.', 'success');
-                
-            } catch (error) {
-                console.error('Processing error:', error);
-                showError(error.message || 'An error occurred during processing. Please try again.');
-            } finally {
-                setLoading(false);
-            }
-        });
+  comparisons.forEach((item, index) => {
+    const card = document.createElement('div');
+    card.className = `rank-card${index === 0 ? ' best' : ''}`;
 
-        async function fetchAndExtractPDFStamp(pdfUrl) {
-            try {
-                // Try multiple CORS proxy services
-                const corsProxies = [
-                    'https://api.allorigins.win/raw?url=',
-                    'https://cors-anywhere.herokuapp.com/',
-                    'https://thingproxy.freeboard.io/fetch/'
-                ];
-                
-                let response = null;
-                let lastError = null;
-                
-                // First, try direct fetch with no-cors mode
-                try {
-                    response = await fetch(pdfUrl, {
-                        method: 'GET',
-                        mode: 'no-cors',
-                        cache: 'no-cache'
-                    });
-                    
-                    // no-cors mode doesn't give us access to response data, so this won't work
-                    // But we try it first to see if the server allows it
-                } catch (e) {
-                    console.log('Direct fetch failed, trying proxies...');
-                }
-                
-                // Try each CORS proxy
-                for (const proxy of corsProxies) {
-                    try {
-                        const proxyUrl = proxy + encodeURIComponent(pdfUrl);
-                        response = await fetch(proxyUrl, {
-                            method: 'GET',
-                            headers: {
-                                'Accept': 'application/pdf',
-                            },
-                            cache: 'no-cache'
-                        });
-                        
-                        if (response.ok) {
-                            console.log(`Successfully fetched PDF using proxy: ${proxy}`);
-                            break;
-                        } else {
-                            throw new Error(`Proxy response not ok: ${response.status}`);
-                        }
-                    } catch (error) {
-                        lastError = error;
-                        console.log(`Proxy ${proxy} failed:`, error.message);
-                        continue;
-                    }
-                }
-                
-                // If all proxies failed, try a different approach - use a PDF.js compatible proxy
-                if (!response || !response.ok) {
-                    try {
-                        // Try with cors.sh
-                        const corsShUrl = `https://cors.sh/${pdfUrl}`;
-                        response = await fetch(corsShUrl, {
-                            method: 'GET',
-                            headers: {
-                                'x-cors-api-key': 'temp_key' // You can get a free key from cors.sh
-                            }
-                        });
-                        
-                        if (response.ok) {
-                            console.log('Successfully fetched PDF using cors.sh');
-                        }
-                    } catch (error) {
-                        console.log('cors.sh failed:', error.message);
-                        lastError = error;
-                    }
-                }
-                
-                // If still no success, try creating a blob URL approach
-                if (!response || !response.ok) {
-                    // As a last resort, try to load PDF in an iframe and extract it
-                    return await loadPDFViaIframe(pdfUrl);
-                }
-                
-                const arrayBuffer = await response.arrayBuffer();
-                
-                if (!arrayBuffer || arrayBuffer.byteLength === 0) {
-                    throw new Error('Received empty PDF data');
-                }
-                
-                const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
-                
-                // Extract first page (assuming stamp is on first page)
-                const page = await pdf.getPage(1);
-                const viewport = page.getViewport({scale: 2.0});
-                
-                // Create canvas to render PDF page
-                const canvas = document.createElement('canvas');
-                const context = canvas.getContext('2d');
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                
-                // Render PDF page to canvas
-                const renderContext = {
-                    canvasContext: context,
-                    viewport: viewport
-                };
-                await page.render(renderContext).promise;
-                
-                // Convert canvas to image
-                return new Promise((resolve) => {
-                    const img = new Image();
-                    img.onload = () => resolve(img);
-                    img.src = canvas.toDataURL();
-                });
-                
-            } catch (error) {
-                console.error('Error fetching PDF:', error);
-                throw new Error(`Failed to fetch PDF. This may be due to CORS restrictions or server issues. Please try again or contact support.`);
-            }
-        }
+    const canvas = document.createElement('canvas');
+    displayCanvas(canvas, item.canvas);
 
-        async function loadPDFViaIframe(pdfUrl) {
-            return new Promise((resolve, reject) => {
-                // Create hidden iframe to load PDF
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                iframe.style.width = '400px';
-                iframe.style.height = '300px';
-                
-                // Set up timeout
-                const timeout = setTimeout(() => {
-                    document.body.removeChild(iframe);
-                    reject(new Error('PDF loading timeout'));
-                }, 15000);
-                
-                iframe.onload = () => {
-                    clearTimeout(timeout);
-                    
-                    try {
-                        // Try to access iframe content (will fail due to CORS, but we try)
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        
-                        if (iframeDoc) {
-                            // This would work if same origin
-                            setTimeout(() => {
-                                document.body.removeChild(iframe);
-                                resolve(createFallbackStampImage(pdfUrl));
-                            }, 2000);
-                        } else {
-                            document.body.removeChild(iframe);
-                            resolve(createFallbackStampImage(pdfUrl));
-                        }
-                    } catch (e) {
-                        document.body.removeChild(iframe);
-                        resolve(createFallbackStampImage(pdfUrl));
-                    }
-                };
-                
-                iframe.onerror = () => {
-                    clearTimeout(timeout);
-                    document.body.removeChild(iframe);
-                    resolve(createFallbackStampImage(pdfUrl));
-                };
-                
-                iframe.src = pdfUrl;
-                document.body.appendChild(iframe);
-            });
-        }
+    const badge = document.createElement('div');
+    badge.className = 'rank-badge';
+    badge.textContent = index === 0 ? 'BEST EVIDENCE' : `RANK ${index + 1}`;
 
-        function createFallbackStampImage(pdfUrl) {
-            // Create a placeholder stamp image when PDF cannot be loaded
-            const canvas = document.createElement('canvas');
-            canvas.width = 400;
-            canvas.height = 300;
-            const ctx = canvas.getContext('2d');
-            
-            // Draw a placeholder stamp
-            ctx.fillStyle = '#f8f9fa';
-            ctx.fillRect(0, 0, 400, 300);
-            
-            // Draw border
-            ctx.strokeStyle = '#dee2e6';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(10, 10, 380, 280);
-            
-            // Draw text
-            ctx.fillStyle = '#495057';
-            ctx.font = 'bold 18px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('PDF Stamp Preview', 200, 80);
-            
-            ctx.font = '14px Arial';
-            ctx.fillText('Unable to load PDF due to CORS restrictions', 200, 120);
-            ctx.fillText('Comparison will use fallback method', 200, 140);
-            
-            // Extract customer code from URL
-            const customerCode = pdfUrl.match(/(\d+)\.pdf$/)?.[1] || 'Unknown';
-            ctx.font = 'bold 16px monospace';
-            ctx.fillText(`Customer Code: ${customerCode}`, 200, 180);
-            
-            // Draw a simple stamp-like shape
-            ctx.strokeStyle = '#007bff';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([5, 5]);
-            ctx.strokeRect(50, 200, 300, 60);
-            ctx.setLineDash([]);
-            
-            ctx.fillStyle = '#007bff';
-            ctx.font = 'bold 14px Arial';
-            ctx.fillText('STAMP PLACEHOLDER', 200, 235);
-            
-            // Convert to image
-            return new Promise((resolve) => {
-                const img = new Image();
-                img.onload = () => resolve(img);
-                img.src = canvas.toDataURL();
-            });
-        }
+    const title = document.createElement('div');
+    title.className = 'rank-title';
+    title.textContent = `Official stamp ${index + 1}`;
 
-        async function performBasicComparison(uploadedImg, pdfImg) {
-            try {
-                // Get canvases for comparison
-                const uploadedCanvas = document.getElementById('canvasUp');
-                const pdfCanvas = document.getElementById('canvasPdf');
-                
-                const uploadedCtx = uploadedCanvas.getContext('2d');
-                const pdfCtx = pdfCanvas.getContext('2d');
-                
-                // Get image data
-                const uploadedData = uploadedCtx.getImageData(0, 0, uploadedCanvas.width, uploadedCanvas.height);
-                const pdfData = pdfCtx.getImageData(0, 0, pdfCanvas.width, pdfCanvas.height);
-                
-                // Calculate basic pixel difference
-                let totalDiff = 0;
-                let pixelCount = 0;
-                const minLength = Math.min(uploadedData.data.length, pdfData.data.length);
-                
-                for (let i = 0; i < minLength; i += 4) {
-                    const rDiff = Math.abs(uploadedData.data[i] - pdfData.data[i]);
-                    const gDiff = Math.abs(uploadedData.data[i + 1] - pdfData.data[i + 1]);
-                    const bDiff = Math.abs(uploadedData.data[i + 2] - pdfData.data[i + 2]);
-                    
-                    totalDiff += (rDiff + gDiff + bDiff) / 3;
-                    pixelCount++;
-                }
-                
-                const averageDiff = totalDiff / pixelCount;
-                const similarity = 1 - (averageDiff / 255);
-                
-                // Calculate color histogram similarity (basic)
-                const uploadedHist = calculateBasicHistogram(uploadedData);
-                const pdfHist = calculateBasicHistogram(pdfData);
-                const hist
+    const details = document.createElement('div');
+    details.className = 'rank-score';
+    details.innerHTML = `
+      Evidence: <strong>${percent(item.overallScore)}</strong><br>
+      Features: ${item.goodMatches}, inliers: ${item.inliers}<br>
+      Page ${item.pageNumber}, candidate ${item.candidateNumber}`;
+
+    card.append(canvas, badge, title, details);
+    grid.appendChild(card);
+  });
+
+  wrapper.classList.toggle('show', comparisons.length > 0);
+}
+
+function displayComparisonResults(result) {
+  const styles = {
+    MATCH: { icon: '✅', label: 'MATCH', bg: '#d1e7dd', color: '#0f5132', border: '#badbcc' },
+    REVIEW: { icon: '⚠️', label: 'MANUAL REVIEW', bg: '#fff3cd', color: '#664d03', border: '#ffecb5' },
+    NO_MATCH: { icon: '❌', label: 'NO MATCH', bg: '#f8d7da', color: '#842029', border: '#f5c2c7' }
+  };
+  const style = styles[result.status] || styles.NO_MATCH;
+  const score = el('score');
+  score.style.background = style.bg;
+  score.style.color = style.color;
+  score.style.border = `1px solid ${style.border}`;
+  score.innerHTML = `
+    <div style="font-size:1.35em;font-weight:700">${style.icon} ${style.label}</div>
+    <div style="margin-top:6px">Customer Code: ${escapeHtml(result.pdfId)}</div>
+    <div style="margin-top:6px;font-weight:700">Evidence Score: ${percent(result.overallScore)}</div>
+    <div style="margin-top:12px;font-size:.88em;line-height:1.6">
+      <div>Official candidate: page ${result.pageNumber}, candidate ${result.candidateNumber}</div>
+      <div>Official stamp candidates checked: ${result.candidatesChecked}</div>
+      <div>Reference stamp components: ${result.stampMetrics?.components ?? 'N/A'}</div>
+      <div>ORB evidence: ${percent(result.orbScore)}</div>
+      <div>Shape similarity: ${percent(result.shapeScore)}</div>
+      <div>Normalized pixel similarity: ${percent(result.pixelScore)}</div>
+      <div>Good feature matches: ${result.goodMatches}</div>
+      <div>Geometric inliers: ${result.inliers}</div>
+      <div>Inlier ratio: ${percent(result.inlierRatio)}</div>
+    </div>
+    <div style="margin-top:12px;font-size:.78em">Operational decision support only. A MATCH result is not legal authentication.</div>`;
+  score.classList.add('show');
+}
+
+function displayNotVerified(pdfId, reason) {
+  hasResults = false;
+  lastVerificationResult = null;
+  updateShareButtons();
+  el('result').classList.remove('show');
+  el('rankedResults').classList.remove('show');
+  el('rankedGrid').innerHTML = '';
+  const score = el('score');
+  score.style.background = '#e2e3e5';
+  score.style.color = '#41464b';
+  score.style.border = '1px solid #d3d6d8';
+  score.innerHTML = `
+    <div style="font-size:1.35em;font-weight:700">⚠️ NOT VERIFIED</div>
+    <div style="margin-top:6px">Customer Code: ${escapeHtml(pdfId)}</div>
+    <div style="margin-top:10px;font-size:.9em">${escapeHtml(reason)}</div>
+    <div style="margin-top:8px;font-size:.8em">No match decision or similarity percentage was produced.</div>`;
+  score.classList.add('show');
+  updateStatus('Verification was not completed.', 'error');
+}
+
+async function captureAndShare() {
+  try {
+    shareBtn.disabled = true;
+    updateStatus('Preparing verification result...', 'info');
+    const canvas = await html2canvas(el('screenshot-target'), { backgroundColor: '#fff', scale: 2, useCORS: true, logging: false });
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1));
+    const screenshot = new File([blob], 'stamp-verification-result.png', { type: 'image/png' });
+    const files = [screenshot];
+    if (uploadedImageFile) files.push(uploadedImageFile);
+    if (navigator.share && navigator.canShare?.({ files })) {
+      await navigator.share({ title: 'Stamp Verification Result', text: `Customer code: ${pdfIdInput.value}`, files });
+      updateStatus('Result shared successfully.', 'success');
+    } else {
+      const link = document.createElement('a');
+      link.download = `stamp-verification-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      updateStatus('Verification image downloaded.', 'success');
+    }
+  } catch (error) {
+    updateStatus(`Share failed: ${error.message}`, 'error');
+  } finally { updateShareButtons(); }
+}
+
+function percent(value) { return `${Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100)}%`; }
+function escapeHtml(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+function setLoading(loading) {
+  btnCheck.disabled = loading;
+  btnCheck.textContent = loading ? '2) ⏳ Processing...' : '2) 🔍 Match';
+}
+function updateShareButtons() { shareBtn.disabled = !(hasResults && uploadedImageFile); }
+function showProgress() { progressDiv.style.display = 'block'; }
+function hideProgress() { progressDiv.style.display = 'none'; }
+function updateProgress(value, text) { progressFill.style.width = `${value}%`; progressText.textContent = text; }
+function showError(message) { errorDiv.textContent = message; errorDiv.style.display = 'block'; }
+function hideError() { errorDiv.style.display = 'none'; }
+function updateStatus(message, type, duration = 5000) {
+  const status = el('status');
+  status.textContent = message;
+  status.className = `status ${type}`;
+  status.style.display = 'block';
+  clearTimeout(updateStatus.timer);
+  updateStatus.timer = setTimeout(() => { status.style.display = 'none'; }, duration);
+}
+function clearPreviousResults() {
+  extractedCodesDiv.style.display = 'none';
+  el('result').classList.remove('show');
+  el('rankedResults').classList.remove('show');
+  el('rankedGrid').innerHTML = '';
+  const score = el('score');
+  score.classList.remove('show');
+  score.innerHTML = '';
+  score.removeAttribute('style');
+  pdfIdInput.value = '';
+  btnCheck.disabled = true;
+  hasResults = false;
+  lastVerificationResult = null;
+  updateShareButtons();
+}
+</script>
+</body>
+</html>
