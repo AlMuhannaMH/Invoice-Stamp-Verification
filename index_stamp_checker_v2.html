@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice Stamp Checker</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f3f5f7;
+      min-height: 100vh;
+      padding: 20px;
+      color: #263238;
+    }
+    .container {
+      max-width: 860px;
+      margin: 5px auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.10);
+      padding: 20px;
+    }
+    .header-container {
+      position: relative;
+      min-height: 96px;
+      border: 1px solid #df9c35;
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 14px;
+      background: #eda740;
+      display: flex;
+      align-items: center;
+    }
+    .logo { height: 76px; width: auto; max-width: 150px; object-fit: contain; }
+    .header-title {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 22px;
+      white-space: nowrap;
+    }
+    .upload-area {
+      border: 2px dashed #c8cdd2;
+      border-radius: 10px;
+      padding: 18px 10px;
+      text-align: center;
+      margin-bottom: 10px;
+      transition: .2s;
+    }
+    .upload-area.dragover, .upload-area:hover { border-color: #4caf50; background: #f4fff4; }
+    .file-input { display: none; }
+    .btn {
+      width: 180px;
+      min-height: 42px;
+      background: #4caf50;
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      font-size: 14px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: .2s;
+      margin: 5px;
+    }
+    .btn:hover:not(:disabled) { filter: brightness(.92); }
+    .btn:disabled { background: #b8bfc5; cursor: not-allowed; }
+    .btn-secondary { background: #1976d2; }
+    .button-row { display: flex; justify-content: center; gap: 10px; margin: 8px 0; }
+    .progress { display: none; margin: 10px 0; }
+    .progress-bar { width: 100%; height: 9px; background: #edf2f7; border-radius: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #4caf50; width: 0; transition: width .2s; }
+    .progress-text { text-align: center; margin-top: 8px; color: #607d8b; font-size: 12px; }
+    .customer-code-input {
+      width: 100%; padding: 12px; border: 1px solid #d5dadd; border-radius: 7px;
+      font-size: 15px; margin: 7px 0; font-family: monospace; background: #f8f9fa;
+    }
+    .extracted-codes {
+      display: none; background: #edf8ed; border: 1px solid #4caf50;
+      border-radius: 8px; padding: 12px; margin: 8px 0;
+    }
+    .code-item {
+      background: #fff; border: 1px solid #ddd; border-radius: 6px;
+      padding: 10px; margin: 6px 0; display: flex; justify-content: space-between; align-items: center;
+    }
+    .customer-code { font-size: 16px; font-weight: 700; font-family: monospace; }
+    .use-code-btn { background: #4caf50; color: #fff; border: 0; padding: 7px 12px; border-radius: 5px; cursor: pointer; }
+    #result { display: none; grid-template-columns: 1fr 1fr; gap: 18px; margin: 12px 0; }
+    #result.show { display: grid; }
+    .canvas-container { background: #f8f9fa; border-radius: 9px; padding: 12px; text-align: center; border: 1px solid #e4e7e9; }
+    .canvas-container h4 { margin-bottom: 8px; font-size: 14px; }
+    canvas.preview { border: 1px solid #ddd; border-radius: 5px; max-width: 100%; height: auto; background: #fff; }
+    #score { padding: 16px; border-radius: 9px; text-align: center; margin: 10px 0; display: none; }
+    #score.show { display: block; }
+    .error { color: #842029; background: #f8d7da; border: 1px solid #f5c2c7; border-radius: 7px; padding: 12px; margin: 8px 0; display: none; font-size: 14px; }
+    .status { margin-top: 10px; padding: 9px; border-radius: 5px; display: none; text-align: center; font-size: 12px; }
+    .status.success { background: #d1e7dd; color: #0f5132; border: 1px solid #badbcc; }
+    .status.error { background: #f8d7da; color: #842029; border: 1px solid #f5c2c7; }
+    .status.info { background: #cff4fc; color: #055160; border: 1px solid #b6effb; }
+    .notice { font-size: 12px; color: #607d8b; text-align: center; line-height: 1.4; margin-top: 8px; }
+    @media (max-width: 768px) {
+      #result { grid-template-columns: 1fr; }
+      .container { padding: 14px; }
+      .header-title { position: static; transform: none; margin-left: 12px; white-space: normal; }
+    }
+    @media (max-width: 500px) {
+      .button-row { flex-direction: column; align-items: center; }
+      .header-container { flex-direction: column; justify-content: center; }
+      .header-title { margin: 6px 0 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="screenshot-target">
+    <div class="header-container">
+      <img src="logo.png" alt="Logo" class="logo">
+      <h2 class="header-title">Invoice Stamp Checker</h2>
+    </div>
+
+    <div class="upload-area" id="uploadArea">
+      <button class="btn" id="chooseFileBtn">1) 📤 Take photo</button>
+      <div class="notice">Upload an invoice image or PDF. The customer code is read automatically.</div>
+    </div>
+    <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
+
+    <div class="progress" id="progressDiv">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-text" id="progressText">Processing...</div>
+    </div>
+
+    <div class="error" id="errorDiv"></div>
+    <div class="extracted-codes" id="extractedCodesDiv"><div id="codesList"></div></div>
+
+    <input id="pdfId" type="text" class="customer-code-input" placeholder="Customer Code" readonly>
+
+    <div class="button-row">
+      <button id="btnCheck" class="btn" disabled>2) 🔍 Match</button>
+      <button class="btn btn-secondary" id="shareBtn" disabled>3) 📱 Share</button>
+    </div>
+
+    <div id="result">
+      <div class="canvas-container">
+        <h4>📄 Best official stamp candidate</h4>
+        <canvas id="canvasPdf" class="preview"></canvas>
+      </div>
+      <div class="canvas-container">
+        <h4>🖼️ Detected invoice stamp</h4>
+        <canvas id="canvasUp" class="preview"></canvas>
+      </div>
+    </div>
+
+    <div id="score"></div>
+    <div id="status" class="status"></div>
+  </div>
+
+<script>
+'use strict';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const STATUS = Object.freeze({
+  MATCH: 'MATCH',
+  NO_MATCH: 'NO_MATCH',
+  REVIEW: 'REVIEW',
+  NOT_VERIFIED: 'NOT_VERIFIED'
+});
+
+const CONFIG = Object.freeze({
+  pdfRenderScale: 3,
+  analysisSize: 500,
+  minDimension: 55,
+  minAreaRatio: 0.0015,
+  maxAreaRatio: 0.30,
+  maxCandidatesPerPage: 15,
+  cropPadding: 0.16,
+  orbFeatures: 1500,
+  ratioTest: 0.74,
+  minGoodMatches: 10,
+  minInliers: 6,
+  minInlierRatio: 0.30,
+  minOrbScore: 0.07,
+  minShapeScore: 0.28,
+  matchThreshold: 0.50,
+  reviewThreshold: 0.36
+});
+
+let uploadedImageFile = null;
+let hasResults = false;
+let isOpenCVReady = false;
+let lastVerificationResult = null;
+
+const el = id => document.getElementById(id);
+const fileInput = el('fileInput');
+const uploadArea = el('uploadArea');
+const progressDiv = el('progressDiv');
+const progressFill = el('progressFill');
+const progressText = el('progressText');
+const extractedCodesDiv = el('extractedCodesDiv');
+const codesList = el('codesList');
+const errorDiv = el('errorDiv');
+const pdfIdInput = el('pdfId');
+const btnCheck = el('btnCheck');
+const shareBtn = el('shareBtn');
+
+function initializeOpenCV() {
+  const markReady = () => {
+    if (typeof cv !== 'undefined' && cv.Mat) {
+      isOpenCVReady = true;
+      updateStatus('Image comparison engine is ready.', 'success', 1800);
+      return true;
+    }
+    return false;
+  };
+  if (markReady()) return;
+  if (typeof cv !== 'undefined') cv.onRuntimeInitialized = markReady;
+  const timer = setInterval(() => { if (markReady()) clearInterval(timer); }, 400);
+  setTimeout(() => clearInterval(timer), 30000);
+}
+
+document.addEventListener('DOMContentLoaded', initializeOpenCV);
+el('chooseFileBtn').addEventListener('click', () => fileInput.click());
+shareBtn.addEventListener('click', captureAndShare);
+
+uploadArea.addEventListener('dragover', event => {
+  event.preventDefault();
+  uploadArea.classList.add('dragover');
+});
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', event => {
+  event.preventDefault();
+  uploadArea.classList.remove('dragover');
+  const file = event.dataTransfer.files?.[0];
+  if (file) processFile(file);
+});
+fileInput.addEventListener('change', event => {
+  const file = event.target.files?.[0];
+  if (file) processFile(file);
+});
+
+async function processFile(file) {
+  uploadedImageFile = file;
+  hideError();
+  clearPreviousResults();
+  showProgress();
+  try {
+    updateProgress(5, `Processing ${file.name}...`);
+    let text;
+    if (file.type.startsWith('image/')) {
+      text = await extractTextFromImage(file);
+    } else if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      text = await extractTextFromPDF(file);
+    } else {
+      throw new Error(`Unsupported file type: ${file.type || file.name}`);
+    }
+    const codes = extractCustomerCodes(text);
+    updateProgress(100, 'Customer-code reading complete.');
+    setTimeout(() => {
+      hideProgress();
+      displayExtractedCodes(codes);
+    }, 250);
+  } catch (error) {
+    hideProgress();
+    showError(error.message || 'The uploaded file could not be processed.');
+  }
+}
+
+async function extractTextFromImage(file) {
+  const result = await Tesseract.recognize(file, 'eng', {
+    logger: message => {
+      if (message.status === 'recognizing text') {
+        updateProgress(10 + Math.round(message.progress * 80), 'Reading customer code from image...');
+      }
+    }
+  });
+  return result.data.text || '';
+}
+
+async function extractTextFromPDF(file) {
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  let fullText = '';
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    const content = await page.getTextContent();
+    let pageText = content.items.map(item => item.str).join(' ');
+    if (pageText.replace(/\s/g, '').length < 10) {
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      const ocr = await Tesseract.recognize(canvas, 'eng', {
+        logger: message => {
+          if (message.status === 'recognizing text') {
+            const total = ((pageNumber - 1) + message.progress) / pdf.numPages;
+            updateProgress(10 + Math.round(total * 80), `OCR page ${pageNumber}/${pdf.numPages}...`);
+          }
+        }
+      });
+      pageText = ocr.data.text || '';
+    }
+    fullText += pageText + '\n';
+    updateProgress(10 + Math.round(pageNumber / pdf.numPages * 80), `Reading PDF page ${pageNumber}/${pdf.numPages}...`);
+  }
+  return fullText;
+}
+
+function extractCustomerCodes(text) {
+  const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+  const normalized = String(text || '').replace(/[٠-٩]/g, digit => arabicDigits.indexOf(digit));
+  const spaced = normalized.match(/(?<!\d)9\s*6\s*6(?:\s*[-–]?\s*\d){5}(?!\d)/g) || [];
+  const compact = normalized.replace(/[^\d]/g, '').match(/966\d{5}/g) || [];
+  return [...new Set([...spaced.map(value => value.replace(/\D/g, '')), ...compact]
+    .filter(value => /^966\d{5}$/.test(value)))];
+}
+
+function displayExtractedCodes(codes) {
+  if (!codes.length) {
+    showError('No customer code was found. Expected format: 966 followed by 5 digits.');
+    return;
+  }
+  if (codes.length === 1) {
+    selectCode(codes[0]);
+    return;
+  }
+  codesList.innerHTML = '';
+  codes.forEach(code => {
+    const item = document.createElement('div');
+    item.className = 'code-item';
+    const label = document.createElement('div');
+    label.className = 'customer-code';
+    label.textContent = code;
+    const button = document.createElement('button');
+    button.className = 'use-code-btn';
+    button.textContent = 'Use this code';
+    button.addEventListener('click', () => selectCode(code));
+    item.append(label, button);
+    codesList.appendChild(item);
+  });
+  extractedCodesDiv.style.display = 'block';
+}
+
+function selectCode(code) {
+  pdfIdInput.value = code;
+  btnCheck.disabled = false;
+  extractedCodesDiv.style.display = 'none';
+  updateStatus(`Selected customer code: ${code}`, 'success');
+}
+
+async function getInvoiceCanvas(file) {
+  if (file.type.startsWith('image/')) {
+    const image = await loadImage(file);
+    return imageToCanvas(image);
+  }
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+    const page = await pdf.getPage(1);
+    return renderPdfPage(page, 2.5);
+  }
+  throw new Error('Unsupported invoice format.');
+}
+
+async function fetchAndRenderOfficialPDF(pdfId) {
+  const url = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(pdfId)}`;
+  const response = await fetch(url, { cache: 'no-store', headers: { Accept: 'application/pdf' } });
+  if (!response.ok) {
+    let details = `HTTP ${response.status}`;
+    try {
+      const text = await response.text();
+      try { details = JSON.parse(text).message || text || details; }
+      catch { details = text || details; }
+    } catch {}
+    throw new Error(`Official stamp document could not be loaded: ${details}`);
+  }
+  const data = await response.arrayBuffer();
+  if (!data.byteLength) throw new Error('Official stamp document is empty.');
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pages = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+    pages.push({ pageNumber, canvas: await renderPdfPage(page, CONFIG.pdfRenderScale) });
+  }
+  return pages;
+}
+
+async function renderPdfPage(page, scale) {
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: context, viewport }).promise;
+  return canvas;
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+    image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Failed to load the image.')); };
+    image.src = url;
+  });
+}
+
+function imageToCanvas(image) {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.naturalWidth || image.width;
+  canvas.height = image.naturalHeight || image.height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0);
+  return canvas;
+}
+
+function cropCanvas(source, rectangle, paddingRatio = 0) {
+  const px = Math.round(rectangle.width * paddingRatio);
+  const py = Math.round(rectangle.height * paddingRatio);
+  const x = Math.max(0, rectangle.x - px);
+  const y = Math.max(0, rectangle.y - py);
+  const right = Math.min(source.width, rectangle.x + rectangle.width + px);
+  const bottom = Math.min(source.height, rectangle.y + rectangle.height + py);
+  const width = Math.max(1, right - x);
+  const height = Math.max(1, bottom - y);
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, width, height);
+  context.drawImage(source, x, y, width, height, 0, 0, width, height);
+  return canvas;
+}
+
+function resizeCanvasWithPadding(source, targetSize = CONFIG.analysisSize) {
+  const canvas = document.createElement('canvas');
+  canvas.width = targetSize;
+  canvas.height = targetSize;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, targetSize, targetSize);
+  const scale = Math.min(targetSize * .9 / source.width, targetSize * .9 / source.height);
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  context.drawImage(source, 0, 0, source.width, source.height,
+    Math.round((targetSize - width) / 2), Math.round((targetSize - height) / 2), width, height);
+  return canvas;
+}
+
+function displayCanvas(target, source) {
+  const ratio = Math.min(1, 400 / source.width, 400 / source.height);
+  target.width = Math.max(1, Math.round(source.width * ratio));
+  target.height = Math.max(1, Math.round(source.height * ratio));
+  const context = target.getContext('2d');
+  context.clearRect(0, 0, target.width, target.height);
+  context.drawImage(source, 0, 0, target.width, target.height);
+}
+
+function safeDelete(...objects) {
+  objects.forEach(object => {
+    try { if (object && typeof object.delete === 'function') object.delete(); } catch {}
+  });
+}
+
+function intersectionOverUnion(a, b) {
+  const left = Math.max(a.x, b.x), top = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+  const union = a.width * a.height + b.width * b.height - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+function removeOverlaps(candidates) {
+  const selected = [];
+  [...candidates].sort((a, b) => b.score - a.score).forEach(candidate => {
+    if (!selected.some(current => intersectionOverUnion(candidate, current) > .45)) selected.push(candidate);
+  });
+  return selected;
+}
+
+function collectCandidates(contours, width, height, type) {
+  const result = [];
+  const imageArea = width * height;
+  for (let i = 0; i < contours.size(); i++) {
+    const contour = contours.get(i);
+    const rect = cv.boundingRect(contour);
+    const contourArea = cv.contourArea(contour);
+    contour.delete();
+    const rectArea = rect.width * rect.height;
+    const areaRatio = rectArea / imageArea;
+    const aspect = rect.width / Math.max(1, rect.height);
+    if (rect.width < CONFIG.minDimension || rect.height < CONFIG.minDimension) continue;
+    if (areaRatio < CONFIG.minAreaRatio || areaRatio > CONFIG.maxAreaRatio) continue;
+    if (aspect < .30 || aspect > 3.2) continue;
+    const fill = contourArea / Math.max(1, rectArea);
+    const square = 1 - Math.min(1, Math.abs(1 - aspect));
+    const blueBonus = type === 'blue' ? .35 : 0;
+    const bottomBias = (rect.y + rect.height / 2) / height * .05;
+    result.push({ ...rect, type, areaRatio, score: blueBonus + square * .35 + Math.min(1, fill * 3) * .25 + bottomBias });
+  }
+  return result;
+}
+
+function detectStampCandidates(sourceCanvas) {
+  let src, rgb, hsv, blueMask, gray, darkMask, kernel;
+  let blueContours, darkContours, blueHierarchy, darkHierarchy;
+  try {
+    src = cv.imread(sourceCanvas);
+    rgb = new cv.Mat();
+    cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+    hsv = new cv.Mat();
+    cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+    const lowerBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [85, 30, 20, 0]);
+    const upperBlue = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [145, 255, 255, 255]);
+    blueMask = new cv.Mat();
+    cv.inRange(hsv, lowerBlue, upperBlue, blueMask);
+    safeDelete(lowerBlue, upperBlue);
+    kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(9, 9));
+    cv.morphologyEx(blueMask, blueMask, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 3);
+    cv.dilate(blueMask, blueMask, kernel, new cv.Point(-1, -1), 2);
+    blueContours = new cv.MatVector(); blueHierarchy = new cv.Mat();
+    cv.findContours(blueMask, blueContours, blueHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const blue = collectCandidates(blueContours, sourceCanvas.width, sourceCanvas.height, 'blue');
+
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    darkMask = new cv.Mat();
+    cv.threshold(gray, darkMask, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+    cv.morphologyEx(darkMask, darkMask, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 2);
+    cv.dilate(darkMask, darkMask, kernel, new cv.Point(-1, -1), 2);
+    darkContours = new cv.MatVector(); darkHierarchy = new cv.Mat();
+    cv.findContours(darkMask, darkContours, darkHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const dark = collectCandidates(darkContours, sourceCanvas.width, sourceCanvas.height, 'dark');
+    return removeOverlaps([...blue, ...dark]).slice(0, CONFIG.maxCandidatesPerPage);
+  } finally {
+    safeDelete(src, rgb, hsv, blueMask, gray, darkMask, kernel,
+      blueContours, darkContours, blueHierarchy, darkHierarchy);
+  }
+}
+
+function chooseInvoiceCandidate(candidates) {
+  if (!candidates.length) return null;
+  const blue = candidates.filter(candidate => candidate.type === 'blue');
+  return [...(blue.length ? blue : candidates)].sort((a, b) => b.score - a.score)[0];
+}
+
+function prepareStamp(sourceCanvas) {
+  const normalized = resizeCanvasWithPadding(sourceCanvas);
+  let src, gray, equalized, binary;
+  try {
+    src = cv.imread(normalized);
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    equalized = new cv.Mat();
+    cv.equalizeHist(gray, equalized);
+    binary = new cv.Mat();
+    cv.adaptiveThreshold(equalized, binary, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 31, 9);
+    const output = document.createElement('canvas');
+    cv.imshow(output, binary);
+    return output;
+  } finally { safeDelete(src, gray, equalized, binary); }
+}
+
+function createOrb() {
+  try { return new cv.ORB(CONFIG.orbFeatures); }
+  catch { return new cv.ORB(); }
+}
+
+function calculateOrbSimilarity(sourceGray, referenceGray) {
+  let orb, kp1, kp2, des1, des2, mask, matcher, knn, srcPoints, refPoints, hMask, homography;
+  try {
+    orb = createOrb();
+    kp1 = new cv.KeyPointVector(); kp2 = new cv.KeyPointVector();
+    des1 = new cv.Mat(); des2 = new cv.Mat(); mask = new cv.Mat();
+    orb.detectAndCompute(sourceGray, mask, kp1, des1);
+    orb.detectAndCompute(referenceGray, mask, kp2, des2);
+    if (!des1.rows || !des2.rows) return { score: 0, goodMatches: 0, inliers: 0, inlierRatio: 0 };
+    matcher = new cv.BFMatcher(cv.NORM_HAMMING, false);
+    knn = new cv.DMatchVectorVector();
+    matcher.knnMatch(des1, des2, knn, 2);
+    const accepted = [];
+    for (let i = 0; i < knn.size(); i++) {
+      const pair = knn.get(i);
+      try {
+        if (pair.size() >= 2) {
+          const first = pair.get(0), second = pair.get(1);
+          if (second.distance > 0 && first.distance < CONFIG.ratioTest * second.distance) {
+            accepted.push({ queryIdx: first.queryIdx, trainIdx: first.trainIdx });
+          }
+        }
+      } finally { pair.delete(); }
+    }
+    let inliers = 0, inlierRatio = 0;
+    if (accepted.length >= 4) {
+      const sourceCoordinates = [], referenceCoordinates = [];
+      accepted.forEach(match => {
+        const a = kp1.get(match.queryIdx).pt, b = kp2.get(match.trainIdx).pt;
+        sourceCoordinates.push(a.x, a.y); referenceCoordinates.push(b.x, b.y);
+      });
+      srcPoints = cv.matFromArray(accepted.length, 1, cv.CV_32FC2, sourceCoordinates);
+      refPoints = cv.matFromArray(accepted.length, 1, cv.CV_32FC2, referenceCoordinates);
+      hMask = new cv.Mat();
+      homography = cv.findHomography(srcPoints, refPoints, cv.RANSAC, 5, hMask);
+      if (homography && !homography.empty()) {
+        for (let i = 0; i < hMask.rows; i++) if (hMask.ucharPtr(i, 0)[0]) inliers++;
+        inlierRatio = inliers / accepted.length;
+      }
+    }
+    const keypointBase = Math.max(1, Math.min(kp1.size(), kp2.size()));
+    const descriptorScore = Math.min(1, accepted.length / keypointBase);
+    const inlierScore = Math.min(1, inliers / 25);
+    return {
+      score: descriptorScore * .45 + inlierRatio * .30 + inlierScore * .25,
+      goodMatches: accepted.length,
+      inliers,
+      inlierRatio
+    };
+  } finally {
+    safeDelete(orb, kp1, kp2, des1, des2, mask, matcher, knn, srcPoints, refPoints, hMask, homography);
+  }
+}
+
+function largestContour(contours) {
+  let largest = null, area = 0;
+  for (let i = 0; i < contours.size(); i++) {
+    const contour = contours.get(i);
+    const current = cv.contourArea(contour);
+    if (current > area) { safeDelete(largest); largest = contour; area = current; }
+    else contour.delete();
+  }
+  return largest;
+}
+
+function calculateShapeSimilarity(source, reference) {
+  let contours1, contours2, hierarchy1, hierarchy2, largest1, largest2;
+  try {
+    contours1 = new cv.MatVector(); contours2 = new cv.MatVector();
+    hierarchy1 = new cv.Mat(); hierarchy2 = new cv.Mat();
+    cv.findContours(source, contours1, hierarchy1, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(reference, contours2, hierarchy2, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    largest1 = largestContour(contours1); largest2 = largestContour(contours2);
+    if (!largest1 || !largest2) return 0;
+    const distance = cv.matchShapes(largest1, largest2, cv.CONTOURS_MATCH_I1, 0);
+    return 1 / (1 + Math.max(0, distance));
+  } finally { safeDelete(contours1, contours2, hierarchy1, hierarchy2, largest1, largest2); }
+}
+
+function calculatePixelSimilarity(source, reference) {
+  let diff;
+  try {
+    diff = new cv.Mat();
+    cv.absdiff(source, reference, diff);
+    return Math.max(0, Math.min(1, 1 - cv.mean(diff)[0] / 255));
+  } finally { safeDelete(diff); }
+}
+
+function compareStamps(invoiceStamp, officialStamp) {
+  const preparedInvoice = prepareStamp(invoiceStamp);
+  const preparedOfficial = prepareStamp(officialStamp);
+  let invoiceMat, officialMat, invoiceGray, officialGray;
+  try {
+    invoiceMat = cv.imread(preparedInvoice); officialMat = cv.imread(preparedOfficial);
+    invoiceGray = new cv.Mat(); officialGray = new cv.Mat();
+    cv.cvtColor(invoiceMat, invoiceGray, cv.COLOR_RGBA2GRAY);
+    cv.cvtColor(officialMat, officialGray, cv.COLOR_RGBA2GRAY);
+    const orb = calculateOrbSimilarity(invoiceGray, officialGray);
+    const shapeScore = calculateShapeSimilarity(invoiceGray, officialGray);
+    const pixelScore = calculatePixelSimilarity(invoiceGray, officialGray);
+    const overallScore = orb.score * .60 + shapeScore * .25 + pixelScore * .15;
+    const geometricEvidence = orb.goodMatches >= CONFIG.minGoodMatches &&
+      orb.inliers >= CONFIG.minInliers && orb.inlierRatio >= CONFIG.minInlierRatio;
+    let status = STATUS.NO_MATCH;
+    if (geometricEvidence && orb.score >= CONFIG.minOrbScore &&
+        shapeScore >= CONFIG.minShapeScore && overallScore >= CONFIG.matchThreshold) {
+      status = STATUS.MATCH;
+    } else if (overallScore >= CONFIG.reviewThreshold || orb.inliers >= 4) {
+      status = STATUS.REVIEW;
+    }
+    return { status, overallScore, orbScore: orb.score, shapeScore, pixelScore,
+      goodMatches: orb.goodMatches, inliers: orb.inliers, inlierRatio: orb.inlierRatio };
+  } finally { safeDelete(invoiceMat, officialMat, invoiceGray, officialGray); }
+}
+
+function extractOfficialCandidates(pages) {
+  const candidates = [];
+  pages.forEach(page => {
+    detectStampCandidates(page.canvas).forEach((rectangle, index) => {
+      candidates.push({
+        pageNumber: page.pageNumber,
+        candidateNumber: index + 1,
+        rectangle,
+        canvas: cropCanvas(page.canvas, rectangle, CONFIG.cropPadding)
+      });
+    });
+  });
+  return candidates;
+}
+
+btnCheck.addEventListener('click', async () => {
+  const pdfId = pdfIdInput.value.trim();
+  hideError();
+  if (!pdfId || !uploadedImageFile) return showError('Upload an invoice and select a customer code first.');
+  if (!isOpenCVReady) return displayNotVerified(pdfId, 'The image comparison engine is not ready.');
+  setLoading(true);
+  try {
+    updateStatus('Detecting the stamp on the invoice...', 'info');
+    const invoiceCanvas = await getInvoiceCanvas(uploadedImageFile);
+    const invoiceCandidates = detectStampCandidates(invoiceCanvas);
+    const invoiceCandidate = chooseInvoiceCandidate(invoiceCandidates);
+    if (!invoiceCandidate) return displayNotVerified(pdfId, 'No reliable stamp region was detected on the invoice.');
+    const invoiceStamp = cropCanvas(invoiceCanvas, invoiceCandidate, CONFIG.cropPadding);
+    displayCanvas(el('canvasUp'), invoiceStamp);
+
+    updateStatus(`Loading official document ${pdfId}.pdf...`, 'info');
+    let pages;
+    try { pages = await fetchAndRenderOfficialPDF(pdfId); }
+    catch (error) { return displayNotVerified(pdfId, error.message); }
+
+    updateStatus('Detecting approved stamp candidates...', 'info');
+    const officialCandidates = extractOfficialCandidates(pages);
+    if (!officialCandidates.length) {
+      return displayNotVerified(pdfId, 'The official PDF was loaded, but no reliable approved stamp was detected.');
+    }
+
+    updateStatus(`Comparing ${officialCandidates.length} official candidate(s)...`, 'info');
+    let best = null;
+    officialCandidates.forEach(candidate => {
+      const comparison = compareStamps(invoiceStamp, candidate.canvas);
+      const complete = { ...comparison, ...candidate };
+      if (!best || complete.overallScore > best.overallScore) best = complete;
+    });
+    if (!best) return displayNotVerified(pdfId, 'The comparison could not be completed.');
+    displayCanvas(el('canvasPdf'), best.canvas);
+    lastVerificationResult = { ...best, pdfId, candidatesChecked: officialCandidates.length };
+    displayComparisonResults(lastVerificationResult);
+    el('result').classList.add('show');
+    hasResults = true;
+    updateShareButtons();
+    updateStatus('Verification completed.', 'success');
+  } catch (error) {
+    console.error(error);
+    displayNotVerified(pdfId, error.message || 'Unexpected verification failure.');
+  } finally { setLoading(false); }
+});
+
+function displayComparisonResults(result) {
+  const styles = {
+    MATCH: { icon: '✅', label: 'MATCH', bg: '#d1e7dd', color: '#0f5132', border: '#badbcc' },
+    REVIEW: { icon: '⚠️', label: 'MANUAL REVIEW', bg: '#fff3cd', color: '#664d03', border: '#ffecb5' },
+    NO_MATCH: { icon: '❌', label: 'NO MATCH', bg: '#f8d7da', color: '#842029', border: '#f5c2c7' }
+  };
+  const style = styles[result.status] || styles.NO_MATCH;
+  const score = el('score');
+  score.style.background = style.bg;
+  score.style.color = style.color;
+  score.style.border = `1px solid ${style.border}`;
+  score.innerHTML = `
+    <div style="font-size:1.35em;font-weight:700">${style.icon} ${style.label}</div>
+    <div style="margin-top:6px">Customer Code: ${escapeHtml(result.pdfId)}</div>
+    <div style="margin-top:6px;font-weight:700">Evidence Score: ${percent(result.overallScore)}</div>
+    <div style="margin-top:12px;font-size:.88em;line-height:1.6">
+      <div>Official candidate: page ${result.pageNumber}, candidate ${result.candidateNumber}</div>
+      <div>Official candidates checked: ${result.candidatesChecked}</div>
+      <div>ORB evidence: ${percent(result.orbScore)}</div>
+      <div>Shape similarity: ${percent(result.shapeScore)}</div>
+      <div>Normalized pixel similarity: ${percent(result.pixelScore)}</div>
+      <div>Good feature matches: ${result.goodMatches}</div>
+      <div>Geometric inliers: ${result.inliers}</div>
+      <div>Inlier ratio: ${percent(result.inlierRatio)}</div>
+    </div>
+    <div style="margin-top:12px;font-size:.78em">Operational decision support only. A MATCH result is not legal authentication.</div>`;
+  score.classList.add('show');
+}
+
+function displayNotVerified(pdfId, reason) {
+  hasResults = false;
+  lastVerificationResult = null;
+  updateShareButtons();
+  el('result').classList.remove('show');
+  const score = el('score');
+  score.style.background = '#e2e3e5';
+  score.style.color = '#41464b';
+  score.style.border = '1px solid #d3d6d8';
+  score.innerHTML = `
+    <div style="font-size:1.35em;font-weight:700">⚠️ NOT VERIFIED</div>
+    <div style="margin-top:6px">Customer Code: ${escapeHtml(pdfId)}</div>
+    <div style="margin-top:10px;font-size:.9em">${escapeHtml(reason)}</div>
+    <div style="margin-top:8px;font-size:.8em">No match decision or similarity percentage was produced.</div>`;
+  score.classList.add('show');
+  updateStatus('Verification was not completed.', 'error');
+}
+
+async function captureAndShare() {
+  try {
+    shareBtn.disabled = true;
+    updateStatus('Preparing verification result...', 'info');
+    const canvas = await html2canvas(el('screenshot-target'), { backgroundColor: '#fff', scale: 2, useCORS: true, logging: false });
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1));
+    const screenshot = new File([blob], 'stamp-verification-result.png', { type: 'image/png' });
+    const files = [screenshot];
+    if (uploadedImageFile) files.push(uploadedImageFile);
+    if (navigator.share && navigator.canShare?.({ files })) {
+      await navigator.share({ title: 'Stamp Verification Result', text: `Customer code: ${pdfIdInput.value}`, files });
+      updateStatus('Result shared successfully.', 'success');
+    } else {
+      const link = document.createElement('a');
+      link.download = `stamp-verification-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      updateStatus('Verification image downloaded.', 'success');
+    }
+  } catch (error) {
+    updateStatus(`Share failed: ${error.message}`, 'error');
+  } finally { updateShareButtons(); }
+}
+
+function percent(value) { return `${Math.round(Math.max(0, Math.min(1, Number(value) || 0)) * 100)}%`; }
+function escapeHtml(value) {
+  return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;');
+}
+function setLoading(loading) {
+  btnCheck.disabled = loading;
+  btnCheck.textContent = loading ? '2) ⏳ Processing...' : '2) 🔍 Match';
+}
+function updateShareButtons() { shareBtn.disabled = !(hasResults && uploadedImageFile); }
+function showProgress() { progressDiv.style.display = 'block'; }
+function hideProgress() { progressDiv.style.display = 'none'; }
+function updateProgress(value, text) { progressFill.style.width = `${value}%`; progressText.textContent = text; }
+function showError(message) { errorDiv.textContent = message; errorDiv.style.display = 'block'; }
+function hideError() { errorDiv.style.display = 'none'; }
+function updateStatus(message, type, duration = 5000) {
+  const status = el('status');
+  status.textContent = message;
+  status.className = `status ${type}`;
+  status.style.display = 'block';
+  clearTimeout(updateStatus.timer);
+  updateStatus.timer = setTimeout(() => { status.style.display = 'none'; }, duration);
+}
+function clearPreviousResults() {
+  extractedCodesDiv.style.display = 'none';
+  el('result').classList.remove('show');
+  const score = el('score');
+  score.classList.remove('show');
+  score.innerHTML = '';
+  score.removeAttribute('style');
+  pdfIdInput.value = '';
+  btnCheck.disabled = true;
+  hasResults = false;
+  lastVerificationResult = null;
+  updateShareButtons();
+}
+</script>
+</body>
+</html>
