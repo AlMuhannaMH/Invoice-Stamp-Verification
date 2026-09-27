@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Invoice Stamp Checker</title>
+  <title>Invoice Stamp Checker Test V2</title>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -178,8 +178,12 @@ const CONFIG = Object.freeze({
   minDimension: 55,
   minAreaRatio: 0.0015,
   maxAreaRatio: 0.30,
-  maxCandidatesPerPage: 15,
+  maxCandidatesPerPage: 20,
+  maxOfficialCandidates: 8,
   cropPadding: 0.16,
+  minStampComponents: 12,
+  minStampEdgeDensity: 0.035,
+  maxStampEdgeDensity: 0.42,
   orbFeatures: 1500,
   ratioTest: 0.74,
   minGoodMatches: 10,
@@ -325,7 +329,12 @@ function extractCustomerCodes(text) {
 
 function displayExtractedCodes(codes) {
   if (!codes.length) {
-    showError('No customer code was found. Expected format: 966 followed by 5 digits.');
+    pdfIdInput.value = '';
+    btnCheck.disabled = true;
+    hasResults = false;
+    updateShareButtons();
+    showError('Customer code was not found. Verification stopped. Please upload a clearer invoice showing a code in the format 966 followed by 5 digits.');
+    updateStatus('Customer code not found.', 'error');
     return;
   }
   if (codes.length === 1) {
@@ -557,6 +566,73 @@ function chooseInvoiceCandidate(candidates) {
   return [...(blue.length ? blue : candidates)].sort((a, b) => b.score - a.score)[0];
 }
 
+/*
+ * Reject handwriting, isolated customer codes and document fragments before
+ * they can be treated as approved stamps. A likely stamp normally contains
+ * many separate ink components and a useful concentration of edges.
+ */
+function measureStampLikeness(sourceCanvas) {
+  const normalized = resizeCanvasWithPadding(sourceCanvas, 420);
+  let src, gray, binary, edges, contours, hierarchy;
+  try {
+    src = cv.imread(normalized);
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    binary = new cv.Mat();
+    cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+
+    edges = new cv.Mat();
+    cv.Canny(gray, edges, 70, 160);
+    const edgePixels = cv.countNonZero(edges);
+    const edgeDensity = edgePixels / Math.max(1, edges.rows * edges.cols);
+
+    contours = new cv.MatVector();
+    hierarchy = new cv.Mat();
+    cv.findContours(binary, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+
+    let components = 0;
+    let meaningfulArea = 0;
+    const totalArea = binary.rows * binary.cols;
+    for (let i = 0; i < contours.size(); i++) {
+      const contour = contours.get(i);
+      const area = cv.contourArea(contour);
+      contour.delete();
+      if (area >= 8 && area <= totalArea * 0.35) {
+        components++;
+        meaningfulArea += area;
+      }
+    }
+
+    const inkRatio = cv.countNonZero(binary) / Math.max(1, totalArea);
+    const aspect = sourceCanvas.width / Math.max(1, sourceCanvas.height);
+    const componentScore = Math.min(1, components / 40);
+    const edgeScore = Math.min(1, edgeDensity / 0.12);
+    const inkScore = inkRatio >= 0.025 && inkRatio <= 0.55 ? 1 : 0;
+    const aspectScore = aspect >= 0.45 && aspect <= 2.25 ? 1 : 0;
+    const score = componentScore * 0.45 + edgeScore * 0.30 + inkScore * 0.15 + aspectScore * 0.10;
+
+    return {
+      components,
+      edgeDensity,
+      inkRatio,
+      meaningfulArea,
+      aspect,
+      score,
+      isLikelyStamp:
+        components >= CONFIG.minStampComponents &&
+        edgeDensity >= CONFIG.minStampEdgeDensity &&
+        edgeDensity <= CONFIG.maxStampEdgeDensity &&
+        inkRatio >= 0.025 &&
+        inkRatio <= 0.55 &&
+        aspect >= 0.45 &&
+        aspect <= 2.25
+    };
+  } finally {
+    safeDelete(src, gray, binary, edges, contours, hierarchy);
+  }
+}
+
 function prepareStamp(sourceCanvas) {
   const normalized = resizeCanvasWithPadding(sourceCanvas);
   let src, gray, equalized, binary;
@@ -698,15 +774,27 @@ function extractOfficialCandidates(pages) {
   const candidates = [];
   pages.forEach(page => {
     detectStampCandidates(page.canvas).forEach((rectangle, index) => {
+      const canvas = cropCanvas(page.canvas, rectangle, CONFIG.cropPadding);
+      const stampMetrics = measureStampLikeness(canvas);
+
+      // Do not allow isolated numbers, handwriting or weak document fragments
+      // to compete as official stamp references.
+      if (!stampMetrics.isLikelyStamp) return;
+
       candidates.push({
         pageNumber: page.pageNumber,
         candidateNumber: index + 1,
         rectangle,
-        canvas: cropCanvas(page.canvas, rectangle, CONFIG.cropPadding)
+        canvas,
+        stampMetrics,
+        candidateQuality: stampMetrics.score + (rectangle.type === 'blue' ? 0.08 : 0)
       });
     });
   });
-  return candidates;
+
+  return candidates
+    .sort((a, b) => b.candidateQuality - a.candidateQuality)
+    .slice(0, CONFIG.maxOfficialCandidates);
 }
 
 btnCheck.addEventListener('click', async () => {
@@ -732,15 +820,16 @@ btnCheck.addEventListener('click', async () => {
     updateStatus('Detecting approved stamp candidates...', 'info');
     const officialCandidates = extractOfficialCandidates(pages);
     if (!officialCandidates.length) {
-      return displayNotVerified(pdfId, 'The official PDF was loaded, but no reliable approved stamp was detected.');
+      return displayNotVerified(pdfId, 'The official PDF was loaded, but no reliable approved stamp was detected. Handwriting and customer-code text were excluded.');
     }
 
     updateStatus(`Comparing ${officialCandidates.length} official candidate(s)...`, 'info');
     let best = null;
     officialCandidates.forEach(candidate => {
       const comparison = compareStamps(invoiceStamp, candidate.canvas);
-      const complete = { ...comparison, ...candidate };
-      if (!best || complete.overallScore > best.overallScore) best = complete;
+      const selectionScore = comparison.overallScore * 0.85 + candidate.candidateQuality * 0.15;
+      const complete = { ...comparison, ...candidate, selectionScore };
+      if (!best || complete.selectionScore > best.selectionScore) best = complete;
     });
     if (!best) return displayNotVerified(pdfId, 'The comparison could not be completed.');
     displayCanvas(el('canvasPdf'), best.canvas);
@@ -773,7 +862,8 @@ function displayComparisonResults(result) {
     <div style="margin-top:6px;font-weight:700">Evidence Score: ${percent(result.overallScore)}</div>
     <div style="margin-top:12px;font-size:.88em;line-height:1.6">
       <div>Official candidate: page ${result.pageNumber}, candidate ${result.candidateNumber}</div>
-      <div>Official candidates checked: ${result.candidatesChecked}</div>
+      <div>Official stamp candidates checked: ${result.candidatesChecked}</div>
+      <div>Reference stamp components: ${result.stampMetrics?.components ?? 'N/A'}</div>
       <div>ORB evidence: ${percent(result.orbScore)}</div>
       <div>Shape similarity: ${percent(result.shapeScore)}</div>
       <div>Normalized pixel similarity: ${percent(result.pixelScore)}</div>
