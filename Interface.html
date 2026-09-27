@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Invoice Stamp Checker v2</title>
+<title>Invoice Stamp Checker</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -19,7 +19,7 @@
 <script>
 'use strict';
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-const C={pdfScale:3,analysis:500,pad:.17,maxOfficial:6,invoiceROI:{x:.12,y:.52,w:.82,h:.43},officialROI:{x:.03,y:.16,w:.72,h:.64},qrEdge:.17,qrComponents:240,qrInk:.42,minMatch:.50,minReview:.36};
+const C={pdfScale:3,analysis:500,pad:.17,maxOfficial:6,invoiceROI:{x:.08,y:.62,w:.88,h:.34},officialROI:{x:.03,y:.16,w:.72,h:.64},qrEdge:.17,qrComponents:240,qrInk:.42,minMatch:.50,minReview:.36};
 const $=id=>document.getElementById(id);let uploaded=null,cvReady=false,shareReady=false;
 function initCV(){const ready=()=>{if(typeof cv!=='undefined'&&cv.Mat){cvReady=true;notice('Image comparison engine is ready.','success',1800);return true}return false};if(ready())return;if(typeof cv!=='undefined')cv.onRuntimeInitialized=ready;const t=setInterval(()=>{if(ready())clearInterval(t)},400);setTimeout(()=>clearInterval(t),30000)}
 document.addEventListener('DOMContentLoaded',initCV);$('pick').onclick=()=>$('file').click();$('file').onchange=e=>e.target.files[0]&&processFile(e.target.files[0]);$('match').onclick=verify;$('share').onclick=shareResult;
@@ -36,16 +36,64 @@ function crop(source,r,p=0){const px=Math.round(r.width*p),py=Math.round(r.heigh
 function contourCandidates(contours,w,h,type){const out=[],area=w*h;for(let i=0;i<contours.size();i++){const c=contours.get(i),r=cv.boundingRect(c),ca=cv.contourArea(c);c.delete();const ratio=r.width*r.height/area,aspect=r.width/Math.max(1,r.height);if(r.width<45||r.height<45||ratio<.001||ratio>.35||aspect<.3||aspect>3.2)continue;const square=1-Math.min(1,Math.abs(1-aspect));out.push({...r,type,score:(type==='blue'?.35:0)+square*.35+Math.min(1,ca/Math.max(1,r.width*r.height)*3)*.25})}return out}
 function detect(source){let src,rgb,hsv,bm,gray,dm,k,bc,dc,bh,dh;try{src=cv.imread(source);rgb=new cv.Mat();cv.cvtColor(src,rgb,cv.COLOR_RGBA2RGB);hsv=new cv.Mat();cv.cvtColor(rgb,hsv,cv.COLOR_RGB2HSV);const lo=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[82,22,15,0]),hi=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[150,255,255,255]);bm=new cv.Mat();cv.inRange(hsv,lo,hi,bm);del(lo,hi);k=cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(9,9));cv.morphologyEx(bm,bm,cv.MORPH_CLOSE,k,new cv.Point(-1,-1),3);cv.dilate(bm,bm,k,new cv.Point(-1,-1),2);bc=new cv.MatVector();bh=new cv.Mat();cv.findContours(bm,bc,bh,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);const blue=contourCandidates(bc,source.width,source.height,'blue');gray=new cv.Mat();cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);dm=new cv.Mat();cv.threshold(gray,dm,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);cv.morphologyEx(dm,dm,cv.MORPH_CLOSE,k,new cv.Point(-1,-1),2);dc=new cv.MatVector();dh=new cv.Mat();cv.findContours(dm,dc,dh,cv.RETR_EXTERNAL,cv.CHAIN_APPROX_SIMPLE);const dark=contourCandidates(dc,source.width,source.height,'dark');const selected=[];[...blue,...dark].sort((a,b)=>b.score-a.score).forEach(x=>{if(!selected.some(y=>iou(x,y)>.45))selected.push(x)});return selected.slice(0,20)}finally{del(src,rgb,hsv,bm,gray,dm,k,bc,dc,bh,dh)}}
 function normalize(source,size=420){const c=document.createElement('canvas');c.width=c.height=size;const x=c.getContext('2d');x.fillStyle='white';x.fillRect(0,0,size,size);const sc=Math.min(size*.9/source.width,size*.9/source.height),w=source.width*sc,h=source.height*sc;x.drawImage(source,(size-w)/2,(size-h)/2,w,h);return c}
-function metrics(source){const n=normalize(source),src=cv.imread(n),gray=new cv.Mat(),bin=new cv.Mat(),edge=new cv.Mat(),cs=new cv.MatVector(),hi=new cv.Mat();try{cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);cv.threshold(gray,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);cv.Canny(gray,edge,70,160);cv.findContours(bin,cs,hi,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);let components=0;for(let i=0;i<cs.size();i++){const q=cs.get(i),a=cv.contourArea(q);q.delete();if(a>=8&&a<=bin.rows*bin.cols*.35)components++}const edgeDensity=cv.countNonZero(edge)/(edge.rows*edge.cols),inkRatio=cv.countNonZero(bin)/(bin.rows*bin.cols),aspect=source.width/source.height,score=Math.min(1,components/40)*.45+Math.min(1,edgeDensity/.12)*.3+(inkRatio>.02&&inkRatio<.55?.15:0)+(aspect>.5&&aspect<1.9?.1:0);return{components,edgeDensity,inkRatio,aspect,score}}finally{del(src,gray,bin,edge,cs,hi)}}
-function invoiceStamp(page){const r=roi(page,C.invoiceROI),candidates=detect(r).map(x=>offset(x,page,C.invoiceROI)).map(x=>{const can=crop(page,x,C.pad),m=metrics(can),qr=m.edgeDensity>=C.qrEdge||m.components>=C.qrComponents||m.inkRatio>=C.qrInk;return{...x,canvas:can,m,qr,total:x.score+m.score+(x.type==='blue'?.28:0)-(qr?2:0)}}).filter(x=>!x.qr&&x.m.components>=8&&x.m.edgeDensity>=.012&&x.m.inkRatio>=.008&&x.m.inkRatio<C.qrInk).sort((a,b)=>b.total-a.total);return candidates[0]||null}
+function metrics(source){
+  const n=normalize(source),src=cv.imread(n),gray=new cv.Mat(),bin=new cv.Mat(),edge=new cv.Mat(),cs=new cv.MatVector(),hi=new cv.Mat(),rgb=new cv.Mat(),hsv=new cv.Mat(),blueMask=new cv.Mat();
+  try{
+    cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+    cv.threshold(gray,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);
+    cv.Canny(gray,edge,70,160);
+    cv.findContours(bin,cs,hi,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
+    let components=0;
+    for(let i=0;i<cs.size();i++){
+      const q=cs.get(i),a=cv.contourArea(q);q.delete();
+      if(a>=8&&a<=bin.rows*bin.cols*.35)components++;
+    }
+
+    cv.cvtColor(src,rgb,cv.COLOR_RGBA2RGB);
+    cv.cvtColor(rgb,hsv,cv.COLOR_RGB2HSV);
+    const lo=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[82,18,15,0]);
+    const up=new cv.Mat(hsv.rows,hsv.cols,hsv.type(),[150,255,255,255]);
+    cv.inRange(hsv,lo,up,blueMask);del(lo,up);
+
+    const edgeDensity=cv.countNonZero(edge)/(edge.rows*edge.cols);
+    const inkRatio=cv.countNonZero(bin)/(bin.rows*bin.cols);
+    const blueRatio=cv.countNonZero(blueMask)/(blueMask.rows*blueMask.cols);
+    const aspect=source.width/source.height;
+    const score=Math.min(1,components/40)*.38+Math.min(1,edgeDensity/.12)*.25+(inkRatio>.015&&inkRatio<.55?.12:0)+(aspect>.45&&aspect<2.2?.10:0)+Math.min(1,blueRatio/.08)*.15;
+    return{components,edgeDensity,inkRatio,blueRatio,aspect,score};
+  }finally{del(src,gray,bin,edge,cs,hi,rgb,hsv,blueMask)}
+}
+function invoiceStamp(page){
+  const r=roi(page,C.invoiceROI);
+  const evaluated=detect(r).map(x=>offset(x,page,C.invoiceROI)).map(x=>{
+    const can=crop(page,x,C.pad),m=metrics(can);
+    const qr=m.edgeDensity>=C.qrEdge||m.components>=C.qrComponents||m.inkRatio>=C.qrInk;
+    const textStrip=m.aspect>2.0||m.aspect<0.42;
+    const confirmedBlue=m.blueRatio>=0.006;
+    const total=x.score+m.score+(confirmedBlue?0.75:0)-(qr?3:0)-(textStrip?2:0);
+    return{...x,canvas:can,m,qr,textStrip,confirmedBlue,total};
+  }).filter(x=>
+    !x.qr&&!x.textStrip&&
+    x.m.components>=8&&
+    x.m.edgeDensity>=.010&&
+    x.m.inkRatio>=.006&&
+    x.m.inkRatio<C.qrInk
+  );
+
+  // Customer stamps in the current process are blue. If any blue candidate
+  // exists, ordinary black invoice text is never allowed to win.
+  const blue=evaluated.filter(x=>x.confirmedBlue);
+  const pool=blue.length?blue:evaluated.filter(x=>x.type==='blue');
+  return pool.sort((a,b)=>b.total-a.total)[0]||null;
+}
 function officialStamps(pages){const out=[];pages.forEach(p=>{const r=roi(p.canvas,C.officialROI);detect(r).forEach((x,i)=>{const rect=offset(x,p.canvas,C.officialROI),can=crop(p.canvas,rect,C.pad),m=metrics(can),text=m.aspect<.5||m.aspect>1.9,dense=m.edgeDensity>.30||m.inkRatio>.58,ok=m.components>=16&&m.edgeDensity>=.035&&m.edgeDensity<.30&&m.inkRatio>.02&&m.inkRatio<.58&&!text&&!dense&&m.score>=.42;if(ok)out.push({page:p.n,candidate:i+1,canvas:can,m,quality:m.score+(x.type==='blue'?.12:0)})})});return out.sort((a,b)=>b.quality-a.quality).slice(0,C.maxOfficial)}
 function prepare(source){const n=normalize(source,C.analysis),src=cv.imread(n),g=new cv.Mat(),e=new cv.Mat(),b=new cv.Mat();try{cv.cvtColor(src,g,cv.COLOR_RGBA2GRAY);cv.equalizeHist(g,e);cv.adaptiveThreshold(e,b,255,cv.ADAPTIVE_THRESH_GAUSSIAN_C,cv.THRESH_BINARY,31,9);const c=document.createElement('canvas');cv.imshow(c,b);return c}finally{del(src,g,e,b)}}
 function orbScore(a,b){let orb,k1,k2,d1,d2,mask,bf,knn,spts,rpts,hm,H;try{orb=new cv.ORB();k1=new cv.KeyPointVector();k2=new cv.KeyPointVector();d1=new cv.Mat();d2=new cv.Mat();mask=new cv.Mat();orb.detectAndCompute(a,mask,k1,d1);orb.detectAndCompute(b,mask,k2,d2);if(!d1.rows||!d2.rows)return{score:0,good:0,inliers:0,ratio:0};bf=new cv.BFMatcher(cv.NORM_HAMMING,false);knn=new cv.DMatchVectorVector();bf.knnMatch(d1,d2,knn,2);const good=[];for(let i=0;i<knn.size();i++){const p=knn.get(i);if(p.size()>=2){const x=p.get(0),y=p.get(1);if(y.distance>0&&x.distance<.74*y.distance)good.push({q:x.queryIdx,t:x.trainIdx})}p.delete()}let ins=0,ratio=0;if(good.length>=4){const sa=[],ra=[];good.forEach(m=>{const x=k1.get(m.q).pt,y=k2.get(m.t).pt;sa.push(x.x,x.y);ra.push(y.x,y.y)});spts=cv.matFromArray(good.length,1,cv.CV_32FC2,sa);rpts=cv.matFromArray(good.length,1,cv.CV_32FC2,ra);hm=new cv.Mat();H=cv.findHomography(spts,rpts,cv.RANSAC,5,hm);if(H&&!H.empty()){for(let i=0;i<hm.rows;i++)if(hm.ucharPtr(i,0)[0])ins++;ratio=ins/good.length}}const base=Math.max(1,Math.min(k1.size(),k2.size()));return{score:Math.min(1,good.length/base)*.45+ratio*.30+Math.min(1,ins/25)*.25,good:good.length,inliers:ins,ratio}}finally{del(orb,k1,k2,d1,d2,mask,bf,knn,spts,rpts,hm,H)}}
 function compare(a,b){const aa=prepare(a),bb=prepare(b),am=cv.imread(aa),bm=cv.imread(bb),ag=new cv.Mat(),bg=new cv.Mat(),diff=new cv.Mat();try{cv.cvtColor(am,ag,cv.COLOR_RGBA2GRAY);cv.cvtColor(bm,bg,cv.COLOR_RGBA2GRAY);const o=orbScore(ag,bg);cv.absdiff(ag,bg,diff);const pixel=Math.max(0,1-cv.mean(diff)[0]/255),overall=o.score*.80+pixel*.20;let status='NO MATCH';if(o.good>=10&&o.inliers>=6&&o.ratio>=.3&&overall>=C.minMatch)status='MATCH';else if(overall>=C.minReview||o.inliers>=4)status='MANUAL REVIEW';return{...o,pixel,overall,status}}finally{del(am,bm,ag,bg,diff)}}
 function showCanvas(target,source){const ratio=Math.min(1,400/source.width,400/source.height);target.width=Math.round(source.width*ratio);target.height=Math.round(source.height*ratio);target.getContext('2d').drawImage(source,0,0,target.width,target.height)}
-async function verify(){const code=$('code').value.trim();['result','ranking','score'].forEach(id=>$(id).classList.remove('show'));$('rankgrid').innerHTML='';if(!code||!uploaded)return notice('Upload an invoice first.','error',0);if(!cvReady)return notVerified(code,'The image comparison engine is not ready.');$('match').disabled=true;try{notice('Detecting the invoice stamp...','info',0);const page=await invoiceCanvas(uploaded),inv=invoiceStamp(page);if(!inv)return notVerified(code,'No reliable stamp was detected in the invoice stamp area. QR codes and dense printed blocks were excluded.');showCanvas($('invoicePreview'),inv.canvas);notice(`Loading official document ${code}.pdf...`,'info',0);let pages;try{pages=await officialPages(code)}catch(e){return notVerified(code,e.message)}const refs=officialStamps(pages);if(!refs.length)return notVerified(code,'The official PDF was loaded, but no approved stamp was detected inside the approved-stamp area. Header, footer, handwriting and text strips were excluded.');const ranked=refs.map(r=>({...r,...compare(inv.canvas,r.canvas)})).sort((a,b)=>(b.overall*.9+b.quality*.1)-(a.overall*.9+a.quality*.1));showCanvas($('officialPreview'),ranked[0].canvas);showRanking(ranked);showResult(code,ranked[0],ranked.length,inv.m);$('result').classList.add('show');shareReady=true;$('share').disabled=false;notice('Verification completed.','success')}catch(e){notVerified(code,e.message||'Verification failed.')}finally{$('match').disabled=false}}
+async function verify(){const code=$('code').value.trim();['result','ranking','score'].forEach(id=>$(id).classList.remove('show'));$('rankgrid').innerHTML='';if(!code||!uploaded)return notice('Upload an invoice first.','error',0);if(!cvReady)return notVerified(code,'The image comparison engine is not ready.');$('match').disabled=true;try{notice('Detecting the invoice stamp...','info',0);const page=await invoiceCanvas(uploaded),inv=invoiceStamp(page);if(!inv)return notVerified(code,'No reliable blue stamp was detected in the lower invoice area. QR codes, totals text and dense printed blocks were excluded.');showCanvas($('invoicePreview'),inv.canvas);notice(`Loading official document ${code}.pdf...`,'info',0);let pages;try{pages=await officialPages(code)}catch(e){return notVerified(code,e.message)}const refs=officialStamps(pages);if(!refs.length)return notVerified(code,'The official PDF was loaded, but no approved stamp was detected inside the approved-stamp area. Header, footer, handwriting and text strips were excluded.');const ranked=refs.map(r=>({...r,...compare(inv.canvas,r.canvas)})).sort((a,b)=>(b.overall*.9+b.quality*.1)-(a.overall*.9+a.quality*.1));showCanvas($('officialPreview'),ranked[0].canvas);showRanking(ranked);showResult(code,ranked[0],ranked.length,inv.m);$('result').classList.add('show');shareReady=true;$('share').disabled=false;notice('Verification completed.','success')}catch(e){notVerified(code,e.message||'Verification failed.')}finally{$('match').disabled=false}}
 function showRanking(items){const g=$('rankgrid');g.innerHTML='';items.forEach((x,i)=>{const card=document.createElement('div');card.className='card'+(i===0?' best':'');const can=document.createElement('canvas');showCanvas(can,x.canvas);const badge=document.createElement('div');badge.className='badge';badge.textContent=i===0?'BEST EVIDENCE':`RANK ${i+1}`;const info=document.createElement('p');info.innerHTML=`<strong>Official stamp ${i+1}</strong><br>Evidence ${pct(x.overall)}<br>Features ${x.good}, inliers ${x.inliers}<br>Page ${x.page}, candidate ${x.candidate}`;card.append(can,badge,info);g.append(card)});$('ranking').classList.add('show')}
-function showResult(code,r,count,invM){const style=r.status==='MATCH'?['#d1e7dd','#0f5132','#badbcc','✅']:r.status==='MANUAL REVIEW'?['#fff3cd','#664d03','#ffecb5','⚠️']:['#f8d7da','#842029','#f5c2c7','❌'];const s=$('score');s.style.cssText=`background:${style[0]};color:${style[1]};border:1px solid ${style[2]}`;s.innerHTML=`<h2>${style[3]} ${r.status}</h2><p>Customer Code: ${esc(code)}</p><h3>Evidence Score: ${pct(r.overall)}</h3><p>Approved stamps checked: ${count}<br>Feature matches: ${r.good}<br>Geometric inliers: ${r.inliers}<br>Inlier ratio: ${pct(r.ratio)}<br>Reference components: ${r.m.components}<br>Invoice components: ${invM.components}</p><small>Operational decision support only. A MATCH result is not legal authentication.</small>`;s.classList.add('show')}
+function showResult(code,r,count,invM){const style=r.status==='MATCH'?['#d1e7dd','#0f5132','#badbcc','✅']:r.status==='MANUAL REVIEW'?['#fff3cd','#664d03','#ffecb5','⚠️']:['#f8d7da','#842029','#f5c2c7','❌'];const s=$('score');s.style.cssText=`background:${style[0]};color:${style[1]};border:1px solid ${style[2]}`;s.innerHTML=`<h2>${style[3]} ${r.status}</h2><p>Customer Code: ${esc(code)}</p><h3>Evidence Score: ${pct(r.overall)}</h3><p>Approved stamps checked: ${count}<br>Feature matches: ${r.good}<br>Geometric inliers: ${r.inliers}<br>Inlier ratio: ${pct(r.ratio)}<br>Reference components: ${r.m.components}<br>Invoice components: ${invM.components}<br>Invoice blue ink: ${pct(invM.blueRatio)}</p><small>Operational decision support only. A MATCH result is not legal authentication.</small>`;s.classList.add('show')}
 function notVerified(code,reason){shareReady=false;$('share').disabled=true;['result','ranking'].forEach(id=>$(id).classList.remove('show'));const s=$('score');s.style.cssText='background:#e2e3e5;color:#41464b;border:1px solid #d3d6d8';s.innerHTML=`<h2>⚠️ NOT VERIFIED</h2><p>Customer Code: ${esc(code)}</p><p>${esc(reason)}</p><small>No match decision or similarity percentage was produced.</small>`;s.classList.add('show');notice('Verification was not completed.','error')}
 async function shareResult(){if(!shareReady)return;try{const c=await html2canvas($('capture'),{backgroundColor:'#fff',scale:2,useCORS:true});const blob=await new Promise(r=>c.toBlob(r,'image/png',1)),f=new File([blob],'stamp-verification-result.png',{type:'image/png'});if(navigator.share&&navigator.canShare?.({files:[f]}))await navigator.share({title:'Stamp Verification Result',files:[f]});else{const a=document.createElement('a');a.download=`stamp-verification-${Date.now()}.png`;a.href=c.toDataURL();a.click()}}catch(e){notice('Share failed: '+e.message,'error')}}function pct(v){return Math.round(Math.max(0,Math.min(1,+v||0))*100)+'%'}function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;')}
 </script></body></html>
