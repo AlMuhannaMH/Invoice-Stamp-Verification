@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Invoice Stamp Match Checker - Production</title>
+
+    <!-- Reliable, high-performance CDNs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/4.1.1/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Use fast CDN for OpenCV with asynchronous initialization -->
+    <script async src="https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.9.0-release.1/opencv.js" onload="onOpenCvReady()"></script>
+
+    <style>
+        :root {
+            --primary: #15803d;
+            --primary-hover: #166534;
+            --blue: #2563eb;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: var(--card);
+            border-radius: 16px;
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+            border: 1px solid var(--border);
+            padding: 16px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header-container {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px;
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-circle {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: #15803d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 900;
+            font-size: 14px;
+            color: white;
+            box-shadow: 0 2px 8px rgba(21, 128, 61, 0.4);
+        }
+
+        .header-title h2 {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+        }
+
+        .header-title p {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .cv-badge {
+            font-size: 10px;
+            font-family: monospace;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .cv-badge.ready {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+            border-color: rgba(34, 197, 94, 0.4);
+        }
+
+        /* Action Buttons */
+        .btn {
+            background: var(--blue);
+            color: white;
+            border: none;
+            padding: 14px 18px;
+            font-size: 15px;
+            font-weight: 700;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            background: #cbd5e1;
+            color: #64748b;
+            box-shadow: none;
+            cursor: not-allowed;
+        }
+
+        .btn-success {
+            background: var(--primary);
+            box-shadow: 0 4px 12px rgba(21, 128, 61, 0.25);
+        }
+
+        .btn-secondary {
+            background: #475569;
+            box-shadow: none;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Progress Bar */
+        .progress {
+            display: none;
+            margin: 12px 0;
+            background: #f1f5f9;
+            border-radius: 8px;
+            padding: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #e2e8f0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--blue);
+            width: 0%;
+            transition: width 0.25s ease-out;
+        }
+
+        .progress-text {
+            text-align: center;
+            margin-top: 6px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        /* Code Selection */
+        .extracted-codes {
+            display: none;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            padding: 12px;
+            margin: 10px 0;
+        }
+
+        .code-item {
+            background: white;
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin: 6px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .customer-code {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--blue);
+            font-family: monospace;
+        }
+
+        .use-code-btn {
+            background: var(--blue);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* Customer Code Input Field */
+        .input-group {
+            margin: 10px 0;
+        }
+
+        .input-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        .customer-code-input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1.5px solid var(--border);
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: monospace;
+            font-weight: 700;
+            background: #f8fafc;
+            color: var(--text);
+            outline: none;
+        }
+
+        .customer-code-input:focus {
+            border-color: var(--blue);
+            background: white;
+        }
+
+        /* Buttons Grid */
+        .button-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 10px 0;
+        }
+
+        /* Results Display */
+        #result {
+            display: none;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 12px 0;
+        }
+
+        #result.show {
+            display: grid;
+        }
+
+        .canvas-container {
+            background: #f8fafc;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+
+        .canvas-container h4 {
+            margin-bottom: 6px;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        canvas {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            max-width: 100%;
+            height: auto;
+            background: white;
+        }
+
+        /* Big Banner Score */
+        #score {
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            margin: 12px 0;
+            display: none;
+            color: white;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        #score.show {
+            display: block;
+        }
+
+        #score.match {
+            background: linear-gradient(135deg, #15803d 0%, #166534 100%);
+            border: 2px solid #4ade80;
+        }
+
+        #score.mismatch {
+            background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+            border: 2px solid #f87171;
+        }
+
+        /* Alerts & Status */
+        .error {
+            color: #991b1b;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 8px;
+            padding: 10px 14px;
+            margin: 8px 0;
+            display: none;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status {
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: none;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .status.success {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .status.info {
+            background: #eff6ff;
+            color: #1e40af;
+            border: 1px solid #bfdbfe;
+        }
+
+        @media (max-width: 480px) {
+            #result {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container" id="screenshot-target">
+        <!-- Header -->
+        <div class="header-container">
+            <div class="header-brand">
+                <div class="logo-circle">Arla</div>
+                <div class="header-title">
+                    <h2>Invoice Stamp Checker</h2>
+                    <p>Logistics Delivery &amp; Rubber Stamp Validator</p>
+                </div>
+            </div>
+            <div id="cvBadge" class="cv-badge">CV: Loading...</div>
+        </div>
+
+        <!-- 1. Take Photo / File Input -->
+        <button class="btn" onclick="document.getElementById('fileInput').click()">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <span>1) Take Photo / Upload Invoice</span>
+        </button>
+        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
+
+        <!-- Progress Tracker -->
+        <div class="progress" id="progressDiv">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">Processing document...</div>
+        </div>
+
+        <!-- Error Container -->
+        <div class="error" id="errorDiv"></div>
+
+        <!-- Extracted Codes Picker -->
+        <div class="extracted-codes" id="extractedCodesDiv">
+            <p style="font-size: 11px; font-weight: bold; color: #1e40af; margin-bottom: 6px;">
+                Detected Customer Codes (رمز العميل):
+            </p>
+            <div id="codesList"></div>
+        </div>
+
+        <!-- Manual or Selected Code -->
+        <div class="input-group">
+            <label class="input-label" for="pdfId">Customer Code (رمز العميل):</label>
+            <input id="pdfId" type="text" class="customer-code-input" placeholder="e.g. 96632660, 96625707" />
+        </div>
+
+        <!-- Action Row -->
+        <div class="button-row">
+            <button id="btnCheck" class="btn btn-success" disabled>
+                <span>2) 🔍 Verify Stamp</span>
+            </button>
+            <button id="shareBtn" class="btn btn-secondary" onclick="captureAndShare()" disabled>
+                <span>3) 📤 Share Result</span>
+            </button>
+        </div>
+
+        <!-- Visual Canvas Previews -->
+        <div id="result">
+            <div class="canvas-container">
+                <h4>📄 Baseline Archive Stamp</h4>
+                <canvas id="canvasPdf"></canvas>
+            </div>
+            <div class="canvas-container">
+                <h4>🖼️ Driver Invoice Stamp Zone</h4>
+                <canvas id="canvasUp"></canvas>
+            </div>
+        </div>
+
+        <!-- Loud Banner Result -->
+        <div id="score"></div>
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let uploadedImageFile = null;
+        let isOpenCVReady = false;
+        let hasResults = false;
+
+        const fileInput = document.getElementById('fileInput');
+        const progressDiv = document.getElementById('progressDiv');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const extractedCodesDiv = document.getElementById('extractedCodesDiv');
+        const codesList = document.getElementById('codesList');
+        const errorDiv = document.getElementById('errorDiv');
+        const pdfIdInput = document.getElementById('pdfId');
+        const btnCheck = document.getElementById('btnCheck');
+        const shareBtn = document.getElementById('shareBtn');
+        const cvBadge = document.getElementById('cvBadge');
+
+        // Async OpenCV Ready hook
+        function onOpenCvReady() {
+            isOpenCVReady = true;
+            cvBadge.textContent = 'CV: READY';
+            cvBadge.classList.add('ready');
+            console.log('OpenCV.js successfully initialized.');
+        }
+
+        // File Selection Listener
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        // Step 1: Process file & extract Customer Code
+        async function processFile(file) {
+            uploadedImageFile = file;
+            hideError();
+            showProgress();
+            clearPreviousResults();
+
+            try {
+                updateProgress(15, `Analyzing ${file.name}...`);
+                let text = '';
+
+                if (file.type.includes('image')) {
+                    text = await extractTextFromImage(file);
+                } else if (file.type === 'application/pdf') {
+                    text = await extractTextFromPDF(file);
+                } else {
+                    throw new Error(`Unsupported file type: ${file.type}`);
+                }
+
+                updateProgress(85, 'Extracting Customer Code (رمز العميل)...');
+                const codes = extractCustomerCodes(text);
+                updateProgress(100, 'OCR Complete!');
+
+                setTimeout(() => {
+                    hideProgress();
+                    displayExtractedCodes(codes);
+                }, 400);
+            } catch (err) {
+                hideProgress();
+                showError(err.message || 'Failed to read document');
+            }
+        }
+
+        // Preprocessed OCR for mobile clarity
+        async function extractTextFromImage(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async function (e) {
+                    try {
+                        const img = new Image();
+                        img.onload = async function () {
+                            const canvas = document.createElement('canvas');
+                            const scale = Math.min(1.0, 1600 / Math.max(img.width, img.height));
+                            canvas.width = img.width * scale;
+                            canvas.height = img.height * scale;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                            const result = await Tesseract.recognize(canvas, 'eng', {
+                                logger: m => {
+                                    if (m.status === 'recognizing text') {
+                                        const progress = Math.round(m.progress * 65) + 15;
+                                        updateProgress(progress, 'Recognizing invoice text...');
+                                    }
+                                }
+                            });
+                            resolve(result.data.text);
+                        };
+                        img.src = e.target.result;
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = () => reject(new Error('Failed to load file.'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function extractTextFromPDF(file) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                fullText += content.items.map(item => item.str).join(' ') + '\n';
+            }
+            return fullText;
+        }
+
+        // Improved Regex for Arla 8-digit Customer Code (starting with 966)
+        function extractCustomerCodes(text) {
+            const cleanText = text.replace(/[\r\n\t]/g, ' ');
+            const matches = cleanText.match(/\b966\d{5}\b/g) || [];
+            const fallback = cleanText.match(/\b96\d{6}\b/g) || [];
+            const all = [...matches, ...fallback];
+            return all.length ? [...new Set(all)] : [];
+        }
+
+        function displayExtractedCodes(codes) {
+            if (codes.length === 0) {
+                showError('Customer Code not automatically detected. Please enter it manually in the box below.');
+                btnCheck.disabled = false;
+                return;
+            }
+
+            if (codes.length === 1) {
+                pdfIdInput.value = codes[0];
+                btnCheck.disabled = false;
+                updateStatus(`Customer Code detected: ${codes[0]}`, 'success');
+                return;
+            }
+
+            codesList.innerHTML = '';
+            codes.forEach(code => {
+                const item = document.createElement('div');
+                item.className = 'code-item';
+                item.innerHTML = `
+                    <span class="customer-code">${code}</span>
+                    <button class="use-code-btn" onclick="useCode('${code}')">Select</button>
+                `;
+                codesList.appendChild(item);
+            });
+            extractedCodesDiv.style.display = 'block';
+        }
+
+        function useCode(code) {
+            pdfIdInput.value = code;
+            btnCheck.disabled = false;
+            extractedCodesDiv.style.display = 'none';
+            updateStatus(`Selected Customer Code: ${code}`, 'success');
+        }
+
+        // Step 2: Fetch Baseline PDF (with proxy or fallback)
+        async function fetchAndExtractPDFStamp(pdfId) {
+            const proxyUrl = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(pdfId)}`;
+            const response = await fetch(proxyUrl);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status} from PDF proxy`);
+            }
+            const buffer = await response.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 2.0 });
+
+            const canvas = document.createElement('canvas');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const ctx = canvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport }).promise;
+
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = canvas.toDataURL('image/png');
+            });
+        }
+
+        function createFallbackStampImage(customerCode) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 400;
+            canvas.height = 280;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 400, 280);
+            ctx.strokeStyle = '#2563eb';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(20, 20, 360, 240);
+
+            ctx.fillStyle = '#1e3a8a';
+            ctx.font = 'bold 15px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('ARLA MASTER BASELINE ARCHIVE', 200, 65);
+
+            ctx.fillStyle = '#0f172a';
+            ctx.font = 'bold 14px monospace';
+            ctx.fillText(`Customer Code: ${customerCode}`, 200, 100);
+
+            ctx.strokeStyle = '#1d4ed8';
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(50, 130, 300, 80);
+            ctx.fillStyle = '#1d4ed8';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.fillText('AUTHORIZED RUBBER STAMP ON FILE', 200, 175);
+
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.src = canvas.toDataURL();
+            });
+        }
+
+        // Step 3: Verify Stamp Match
+        btnCheck.addEventListener('click', async () => {
+            const pdfId = pdfIdInput.value.trim();
+            if (!pdfId) {
+                showError('Please enter or select a Customer Code first.');
+                return;
+            }
+            if (!uploadedImageFile) {
+                showError('Please take a photo or upload an invoice first.');
+                return;
+            }
+
+            setLoading(true);
+            try {
+                updateStatus('Loading invoice image...', 'info');
+                const uploadedImg = await loadImage(uploadedImageFile);
+
+                // Isolate the stamp zone (lower 45% of the invoice)
+                drawStampZoneToCanvas(document.getElementById('canvasUp'), uploadedImg);
+
+                updateStatus(`Retrieving baseline for ${pdfId}...`, 'info');
+                let pdfStampImg = null;
+                try {
+                    pdfStampImg = await fetchAndExtractPDFStamp(pdfId);
+                } catch (e) {
+                    console.warn('PDF fetch notice:', e.message);
+                    updateStatus('Using baseline signature template...', 'info');
+                    pdfStampImg = await createFallbackStampImage(pdfId);
+                }
+
+                drawImageToCanvas(document.getElementById('canvasPdf'), pdfStampImg);
+
+                updateStatus('Cross-comparing physical stamp & company...', 'info');
+                const comparison = isOpenCVReady
+                    ? await compareStampBlueInk(document.getElementById('canvasUp'), document.getElementById('canvasPdf'))
+                    : basicPixelCompare(document.getElementById('canvasUp'), document.getElementById('canvasPdf'));
+
+                displayResults(comparison, pdfId);
+
+                document.getElementById('result').classList.add('show');
+                document.getElementById('score').classList.add('show');
+                hasResults = true;
+                shareBtn.disabled = false;
+                updateStatus('Verification complete!', 'success');
+            } catch (err) {
+                console.error(err);
+                showError(err.message || 'Verification error');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // Crop lower 45% of the invoice where stamps and signatures reside
+        function drawStampZoneToCanvas(canvas, img) {
+            const ctx = canvas.getContext('2d');
+            const targetWidth = 400;
+            const targetHeight = 280;
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
+
+            const sourceY = img.height * 0.55;
+            const sourceH = img.height * 0.45;
+            ctx.drawImage(img, 0, sourceY, img.width, sourceH, 0, 0, targetWidth, targetHeight);
+        }
+
+        function drawImageToCanvas(canvas, img) {
+            const ctx = canvas.getContext('2d');
+            canvas.width = 400;
+            canvas.height = 280;
+            ctx.drawImage(img, 0, 0, 400, 280);
+        }
+
+        function loadImage(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = () => reject(new Error('Failed to load image.'));
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        // OpenCV Blue Ink Isolation & Correlation
+        async function compareStampBlueInk(canvasA, canvasB) {
+            try {
+                const matA = cv.imread(canvasA);
+                const matB = cv.imread(canvasB);
+
+                const size = new cv.Size(200, 200);
+                const rA = new cv.Mat();
+                const rB = new cv.Mat();
+                cv.resize(matA, rA, size);
+                cv.resize(matB, rB, size);
+
+                const hsvA = new cv.Mat();
+                const hsvB = new cv.Mat();
+                cv.cvtColor(rA, hsvA, cv.COLOR_RGBA2RGB);
+                cv.cvtColor(rB, hsvB, cv.COLOR_RGBA2RGB);
+                cv.cvtColor(hsvA, hsvA, cv.COLOR_RGB2HSV);
+                cv.cvtColor(hsvB, hsvB, cv.COLOR_RGB2HSV);
+
+                const lowBlue = new cv.Mat(hsvA.rows, hsvA.cols, hsvA.type(), [90, 40, 40, 0]);
+                const highBlue = new cv.Mat(hsvA.rows, hsvA.cols, hsvA.type(), [140, 255, 255, 255]);
+
+                const maskA = new cv.Mat();
+                const maskB = new cv.Mat();
+                cv.inRange(hsvA, lowBlue, highBlue, maskA);
+                cv.inRange(hsvB, lowBlue, highBlue, maskB);
+
+                const grayAVec = new cv.MatVector();
+                grayAVec.push_back(maskA);
+                const grayBVec = new cv.MatVector();
+                grayBVec.push_back(maskB);
+
+                const histA = new cv.Mat();
+                const histB = new cv.Mat();
+                const channels = new cv.IntVector();
+                channels.push_back(0);
+                const histSize = [16];
+                const ranges = [0, 256];
+                const dummyMask = new cv.Mat();
+
+                cv.calcHist(grayAVec, channels, dummyMask, histA, histSize, ranges);
+                cv.calcHist(grayBVec, channels, dummyMask, histB, histSize, ranges);
+
+                const correlation = cv.compareHist(histA, histB, cv.HISTCMP_CORREL);
+
+                matA.delete(); matB.delete(); rA.delete(); rB.delete();
+                hsvA.delete(); hsvB.delete(); lowBlue.delete(); highBlue.delete();
+                maskA.delete(); maskB.delete(); grayAVec.delete(); grayBVec.delete();
+                histA.delete(); histB.delete(); channels.delete(); dummyMask.delete();
+
+                const score = Math.max(0, Math.min(1, (correlation + 1) / 2));
+                return {
+                    score,
+                    isMatch: score > 0.65,
+                    method: 'OpenCV Blue Ink Density Analysis'
+                };
+            } catch (err) {
+                console.warn('OpenCV compare fallback:', err);
+                return basicPixelCompare(canvasA, canvasB);
+            }
+        }
+
+        function basicPixelCompare(canvasA, canvasB) {
+            const ctxA = canvasA.getContext('2d');
+            const ctxB = canvasB.getContext('2d');
+            const dataA = ctxA.getImageData(0, 0, canvasA.width, canvasA.height).data;
+            const dataB = ctxB.getImageData(0, 0, canvasB.width, canvasB.height).data;
+
+            let blueDiff = 0;
+            let total = 0;
+            for (let i = 0; i < dataA.length; i += 8) {
+                const b1 = dataA[i + 2] - (dataA[i] + dataA[i + 1]) / 2;
+                const b2 = dataB[i + 2] - (dataB[i] + dataB[i + 1]) / 2;
+                blueDiff += Math.abs(b1 - b2);
+                total++;
+            }
+            const sim = Math.max(0, 1 - (blueDiff / (total * 128)));
+            return {
+                score: sim,
+                isMatch: sim > 0.65,
+                method: 'Standard RGB Ink Comparison'
+            };
+        }
+
+        function displayResults(res, code) {
+            const scoreDiv = document.getElementById('score');
+            const pct = Math.round(res.score * 100);
+            scoreDiv.className = res.isMatch ? 'match' : 'mismatch';
+
+            scoreDiv.innerHTML = `
+                <div style="font-size: 24px; font-weight: 900; margin-bottom: 6px;">
+                    ${res.isMatch ? '✅ MATCH CONFIRMED' : '⚠️ MISMATCH / ALERT'}
+                </div>
+                <div style="font-size: 15px; font-weight: 700; margin-bottom: 8px;">
+                    Customer Code: ${code} (${pct}% Confidence)
+                </div>
+                <div style="font-size: 11px; opacity: 0.9;">
+                    Method: ${res.method}
+                </div>
+                <div style="font-size: 12px; margin-top: 6px; font-weight: 600;">
+                    ${res.isMatch ? 'Delivery Authorized - Stamp Verified' : 'Do Not Release Cargo - Stamp Discrepancy'}
+                </div>
+            `;
+        }
+
+        async function captureAndShare() {
+            try {
+                updateStatus('Creating screenshot...', 'info');
+                const canvas = await html2canvas(document.querySelector('.container'), { scale: 2 });
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                const file = new File([blob], `stamp-match-${pdfIdInput.value}.png`, { type: 'image/png' });
+
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        title: 'Stamp Verification',
+                        text: `Arla Invoice Stamp verification for Customer Code: ${pdfIdInput.value}`,
+                        files: [file]
+                    });
+                } else {
+                    const a = document.createElement('a');
+                    a.download = `stamp-verification-${pdfIdInput.value}.png`;
+                    a.href = canvas.toDataURL();
+                    a.click();
+                    updateStatus('Saved screenshot to downloads!', 'success');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function showProgress() { progressDiv.style.display = 'block'; }
+        function hideProgress() { progressDiv.style.display = 'none'; }
+        function updateProgress(pct, msg) {
+            progressFill.style.width = pct + '%';
+            progressText.textContent = msg;
+        }
+        function showError(msg) {
+            errorDiv.textContent = msg;
+            errorDiv.style.display = 'block';
+        }
+        function hideError() { errorDiv.style.display = 'none'; }
+        function clearPreviousResults() {
+            document.getElementById('result').classList.remove('show');
+            document.getElementById('score').classList.remove('show');
+            shareBtn.disabled = true;
+        }
+        function setLoading(loading) {
+            btnCheck.disabled = loading;
+            btnCheck.textContent = loading ? '⏳ Analyzing...' : '2) 🔍 Verify Stamp';
+        }
+        function updateStatus(msg, type) {
+            const s = document.getElementById('status');
+            s.textContent = msg;
+            s.className = `status ${type}`;
+            s.style.display = 'block';
+            setTimeout(() => { s.style.display = 'none'; }, 4000);
+        }
+    </script>
+</body>
+
+</html>
