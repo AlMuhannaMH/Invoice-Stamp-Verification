@@ -1,0 +1,5 @@
+{
+  "summary": "Optimized, bug-fixed standalone production index.html for Arla Foods invoice & stamp checker. Includes fast OpenCV/HSV blue ink stamp isolation, preprocessed OCR for 966 customer codes, flexible Netlify/API proxy support, mobile-first styling, and clean syntax.",
+  "updatedAt": "2026-10-15T07:03:37.663765622Z",
+  "userFacing": true
+}
