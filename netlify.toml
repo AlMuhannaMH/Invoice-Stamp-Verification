@@ -3,7 +3,7 @@
   functions = "netlify/functions"
 
 [build.environment]
-  NODE_VERSION = "20"                        # FIX: pin Node so function runtime is reproducible
+  NODE_VERSION = "22"                        # FIX: pin Node so function runtime is reproducible
 
 [functions]
   node_bundler = "esbuild"

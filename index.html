@@ -11,7 +11,6 @@
     <script src="https://docs.opencv.org/4.x/opencv.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0)), url('overlay-image.png') no-repeat bottom center;
@@ -50,7 +49,7 @@
         canvas { border: 1px solid #ddd; border-radius: 4px; max-width: 100%; height: auto; }
         #score { color: white; padding: 20px 15px; border-radius: 8px; text-align: center; margin: 5px 0; display: none; background: #4CAF50; }
         #score.show { display: block; }
-        .error { color: #e53e3e; background: #fed7d7; border: 1px solid #feb2b2; border-radius: 6px; padding: 12px; margin: 5px 0; display: none; font-size: 14px; }
+        .error { color: #e53e3e; background: #fed7d7; border: 1px solid #feb2b2; border-radius: 6px; padding: 12px; margin: 5px 0; display: none; font-size: 14px; min-height: 20px; }
         .status { margin-top: 10px; padding: 8px; border-radius: 4px; display: none; text-align: center; font-size: 12px; }
         .status.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .status.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -81,7 +80,6 @@
             <div id="codesList"></div>
         </div>
 
-        <!-- FIX: code input is now editable so users can fix OCR mistakes -->
         <input id="pdfId" type="text" class="customer-code-input" placeholder="Customer Code (966xxxxx)" maxlength="8" inputmode="numeric" autocomplete="off" />
         <div class="code-hint" id="codeHint">💡 Code misread? Edit the digits above before clicking Match.</div>
 
@@ -149,7 +147,6 @@
             if (e.target.files && e.target.files[0]) processFile(e.target.files[0]);
         });
 
-        // Allow manual typing — auto-enable Match button
         pdfIdInput.addEventListener('input', () => {
             const val = pdfIdInput.value.trim();
             btnCheck.disabled = !(/^966\d{5}$/.test(val) && uploadedImageFile);
@@ -173,41 +170,53 @@
                 updateProgress(100, 'Complete!');
                 setTimeout(() => { hideProgress(); displayExtractedCodes(codes); }, 500);
             } catch (error) {
+                console.error('Processing error:', error);
                 hideProgress();
-                showError(error.message);
+                // FIX: fallback message ensures the error box is never blank.
+                showError(error?.message || error?.toString() || 'Error processing file. Please try again.');
             }
         }
 
-        // FIX: upscale small photos + digit-only whitelist to prevent 6↔5 / O↔0 confusion.
         async function extractTextFromImage(file) {
-            const img = await loadImage(file);
-            const maxDim = 2000;
-            let w = img.naturalWidth || img.width;
-            let h = img.naturalHeight || img.height;
-            if (Math.max(w, h) < maxDim) {
-                const ratio = Math.min(3, maxDim / Math.max(w, h));
-                w = Math.round(w * ratio);
-                h = Math.round(h * ratio);
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-
-            const worker = await Tesseract.createWorker('eng', 1, {
-                logger: m => {
-                    if (m.status === 'recognizing text') {
-                        const progress = Math.round(m.progress * 80) + 10;
-                        updateProgress(progress, 'Reading text from image...');
-                    }
+            let worker = null;
+            try {
+                const img = await loadImage(file);
+                const maxDim = 2000;
+                let w = img.naturalWidth || img.width;
+                let h = img.naturalHeight || img.height;
+                if (Math.max(w, h) < maxDim) {
+                    const ratio = Math.min(3, maxDim / Math.max(w, h));
+                    w = Math.round(w * ratio);
+                    h = Math.round(h * ratio);
                 }
-            });
-            await worker.setParameters({
-                tessedit_char_whitelist: '0123456789',
-            });
-            const { data } = await worker.recognize(canvas.toDataURL('image/png'));
-            await worker.terminate();
-            return data.text;
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                const dataUrl = canvas.toDataURL('image/png');
+
+                worker = await Tesseract.createWorker('eng', 1, {
+                    logger: m => {
+                        if (m.status === 'recognizing text') {
+                            const progress = Math.round(m.progress * 80) + 10;
+                            updateProgress(progress, 'Reading text from image...');
+                        }
+                    }
+                });
+                await worker.setParameters({
+                    tessedit_char_whitelist: '0123456789',
+                });
+                const { data } = await worker.recognize(dataUrl);
+                return data.text || '';
+            } catch (e) {
+                console.error('OCR error:', e);
+                // FIX: always throw a message with content so the UI shows something useful.
+                throw new Error(e?.message || 'Failed to read text from image.');
+            } finally {
+                if (worker) {
+                    try { await worker.terminate(); } catch (e) { /* ignore */ }
+                }
+            }
         }
 
         async function extractTextFromPDF(file) {
@@ -278,7 +287,6 @@
             if (btn) { btn.style.background = '#FF9800'; btn.textContent = 'Selected ✓'; }
         }
 
-        // ==== PDF Fetch ====
         async function fetchAndExtractPDFStamp(pdfId) {
             const proxyPdfUrl = `/.netlify/functions/fetch-pdf?id=${encodeURIComponent(pdfId)}`;
             const response = await fetch(proxyPdfUrl);
@@ -306,7 +314,6 @@
             });
         }
 
-        // ==== MAIN MATCH FLOW (four clear outcomes) ====
         btnCheck.addEventListener('click', async () => {
             const pdfId = pdfIdInput.value.trim();
             if (!/^966\d{5}$/.test(pdfId)) {
@@ -335,7 +342,6 @@
                 try {
                     pdfStampImage = await fetchAndExtractPDFStamp(pdfId);
                 } catch (err) {
-                    // FIX: distinguish 404 / 5xx / network in the UI
                     document.getElementById('result').classList.add('show');
                     drawNotAvailableOnCanvas('canvasPdf');
                     if (err.statusCode === 404) {
@@ -378,13 +384,9 @@
             }
         });
 
-        // ==== FIX 1: proper ORB + RANSAC feature matching ====
         async function compareStampImages() {
             if (!isOpenCVReady) {
-                return {
-                    comparisonFailed: true,
-                    error: 'OpenCV engine is still loading. Please wait a moment and try again.'
-                };
+                return { comparisonFailed: true, error: 'OpenCV engine is still loading. Please wait a moment and try again.' };
             }
             try {
                 const imgA = cv.imread(document.getElementById('canvasUp'));
@@ -395,7 +397,6 @@
                     return { comparisonFailed: true, error: 'Images are too small to compare.' };
                 }
 
-                // Resize both to max 600px on the long side — normalizes scale.
                 const resize = (src, maxDim) => {
                     const scale = maxDim / Math.max(src.cols, src.rows);
                     if (scale >= 1) return src.clone();
@@ -413,7 +414,6 @@
                 cv.cvtColor(b, grayB, cv.COLOR_RGBA2GRAY);
                 a.delete(); b.delete();
 
-                // ORB with more features for small stamps.
                 let orb;
                 try { orb = new cv.ORB(2000); } catch { orb = new cv.ORB(); }
                 const kpA = new cv.KeyPointVector();
@@ -441,7 +441,6 @@
                     const top = arr.slice(0, Math.min(100, arr.length));
                     goodMatches = top.length;
 
-                    // RANSAC homography: proves the matches are geometrically consistent.
                     if (top.length >= 4) {
                         const srcPts = [], dstPts = [];
                         for (const m of top) {
@@ -470,19 +469,13 @@
                 orb.delete(); kpA.delete(); kpB.delete();
                 desA.delete(); desB.delete(); noMask.delete();
 
-                // Threshold: ≥10 geometrically consistent matches = same stamp.
-                return {
-                    isMatch: inliers >= 10,
-                    inliers: inliers,
-                    goodMatches: goodMatches,
-                };
+                return { isMatch: inliers >= 10, inliers: inliers, goodMatches: goodMatches };
             } catch (error) {
                 console.error('Comparison engine error:', error);
                 return { comparisonFailed: true, error: error.message };
             }
         }
 
-        // ==== 4 result states ====
         function showMatchResult(isMatch, pdfId) {
             scoreEl.style.background = isMatch ? '#4CAF50' : '#f44336';
             scoreEl.innerHTML = `
@@ -547,7 +540,6 @@
             ctx.fillText('Not available', 200, 105);
         }
 
-        // ==== IMAGE UTILITIES ====
         async function loadImage(file) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
@@ -576,7 +568,6 @@
             });
         }
 
-        // FIX: bumped to 800 so ORB has enough features on small stamps.
         function drawImageToCanvas(canvas, image) {
             const maxSize = 800;
             let w = image.naturalWidth || image.width;
@@ -599,7 +590,6 @@
             shareBtn.disabled = !(hasResults && uploadedImageFile);
         }
 
-        // ==== SHARING ====
         async function captureAndShare() {
             try {
                 updateStatus('Capturing screenshot...', 'info');
@@ -646,7 +636,6 @@
             updateStatus('Downloaded file(s).', 'success');
         }
 
-        // ==== UTILITIES ====
         function showProgress() { progressDiv.style.display = 'block'; extractedCodesDiv.style.display = 'none'; }
         function hideProgress() { progressDiv.style.display = 'none'; }
         function updateProgress(p, t) { progressFill.style.width = p + '%'; progressText.textContent = t; }
@@ -660,7 +649,13 @@
             hasResults = false;
             updateShareButtons();
         }
-        function showError(msg) { errorDiv.textContent = msg; errorDiv.style.display = 'block'; }
+        
+        // FIX: fallback ensures the error box is never blank.
+        function showError(msg) {
+            errorDiv.textContent = msg || 'An unexpected error occurred. Please try again.';
+            errorDiv.style.display = 'block';
+        }
+        
         function hideError() { errorDiv.style.display = 'none'; }
         function updateStatus(msg, type) {
             const s = document.getElementById('status');
