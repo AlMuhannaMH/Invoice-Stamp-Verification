@@ -11,8 +11,8 @@ const ALLOWED_ORIGINS = [
   'http://localhost:8888',
   'http://localhost:3000',
   'https://invoice-stamp-verification.netlify.app',
-//  'https://yourdomain.com',
-//  'https://www.yourdomain.com',
+  //  'https://yourdomain.com',
+  //  'https://www.yourdomain.com',
 ];
 const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/deploy-preview-\d+--invoice-stamp-verification\.netlify\.app$/,
