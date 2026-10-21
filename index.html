@@ -313,7 +313,8 @@
         <div class="upload-area" id="uploadArea">
             <button class="btn" onclick="document.getElementById('fileInput').click()">1) 📤 Take photo</button>
         </div>
-        <input type="file" id="fileInput" class="file-input" accept="image/*,.pdf" capture="environment">
+        <!-- FIX 5: removed capture="environment" so phones offer camera OR file picker (including PDFs). -->
+        <input type="file" id="fileInput" class="file-input" accept="image/*,application/pdf">
         <div class="progress" id="progressDiv">
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
@@ -471,25 +472,29 @@
             codes.forEach(code => {
                 const item = document.createElement('div');
                 item.className = 'code-item';
+                // FIX 6: pass the clicked button explicitly instead of relying on window.event.
                 item.innerHTML = `    
                     <div class="customer-code">${code}</div>    
-                    <button class="use-code-btn" onclick="useCode('${code}')">Use This Code</button>    
+                    <button class="use-code-btn" onclick="useCode('${code}', this)">Use This Code</button>    
                 `;
                 codesList.appendChild(item);
             });
             extractedCodesDiv.style.display = 'block';
         }
-        function useCode(code) {
+        // FIX 6: btn argument replaces the fragile global `event`.
+        function useCode(code, btn) {
             pdfIdInput.value = code;
             btnCheck.disabled = false;
             updateStatus(`Selected code: ${code} - Ready to check match!`, 'success');
             extractedCodesDiv.style.display = 'none';
-            document.querySelectorAll('.use-code-btn').forEach(btn => {
-                btn.style.background = '#4CAF50';
-                btn.textContent = 'Use This Code';
+            document.querySelectorAll('.use-code-btn').forEach(b => {
+                b.style.background = '#4CAF50';
+                b.textContent = 'Use This Code';
             });
-            event.target.style.background = '#FF9800';
-            event.target.textContent = 'Selected ✓';
+            if (btn) {
+                btn.style.background = '#FF9800';
+                btn.textContent = 'Selected ✓';
+            }
         }
 
         // ==== PDF Fetch & Render via Netlify Function ====    
@@ -523,7 +528,7 @@
             });
         }
 
-        // ===== Fallback in case PDF fetch fails =====    
+        // ===== Fallback placeholder (only shown when the PDF is unreachable) =====    
         function createFallbackStampImage(pdfUrl) {
             const canvas = document.createElement('canvas');
             canvas.width = 400;
@@ -577,40 +582,57 @@
             setLoading(true);
             try {
                 updateStatus('Loading uploaded image...', 'info');
-                const uploadedImage = await loadImage(uploadedImageFile);
+                // FIX 3: render PDFs to a canvas image; photos still go through loadImage.
+                const uploadedImage = await loadComparisonImage(uploadedImageFile);
                 drawImageToCanvas(document.getElementById('canvasUp'), uploadedImage);
 
                 updateStatus(`Fetching PDF for customer code ${pdfId}...`, 'info');
                 let pdfStampImage = null;
+                let pdfFetchFailed = false;   // FIX 1: fail closed on any PDF fetch error
+                let pdfFetchError = null;
+
                 try {
                     pdfStampImage = await fetchAndExtractPDFStamp(pdfId);
                 } catch (error) {
+                    pdfFetchFailed = true;
+                    pdfFetchError = error;
                     console.warn('PDF fetch failed:', error.message);
-                    updateStatus('PDF fetch failed, using fallback comparison...', 'info');
+                }
+
+                if (pdfFetchFailed) {
+                    // FIX 1: show a placeholder for context but DO NOT claim MATCH.
                     pdfStampImage = await createFallbackStampImage(
                         `https://arlasfatest.danyaltd.com:14443/CustomerSignature/signatures/${pdfId}.pdf`
                     );
+                    drawImageToCanvas(document.getElementById('canvasPdf'), pdfStampImage);
+
+                    displayComparisonResults({
+                        overallScore: 0,
+                        correlation: 0,
+                        structuralSimilarity: 0,
+                        featureMatches: 0,
+                        isMatch: false,
+                        isFallback: true,
+                        message: 'Reference PDF could not be retrieved. Verification was NOT performed.'
+                    }, pdfId);
+
+                    document.getElementById('result').classList.add('show');
+                    document.getElementById('score').classList.add('show');
+
+                    hasResults = false;              // keep Share disabled
+                    updateShareButtons();
+                    showError('Could not retrieve the reference stamp PDF. Result is UNVERIFIED. ' +
+                        (pdfFetchError ? pdfFetchError.message : ''));
+                    updateStatus('Verification failed — reference PDF unavailable.', 'error');
+                    setLoading(false);
+                    return;
                 }
-                if (!pdfStampImage) {
-                    throw new Error('Could not create stamp comparison image.');
-                }
+
                 drawImageToCanvas(document.getElementById('canvasPdf'), pdfStampImage);
 
                 updateStatus('Comparing stamp images...', 'info');
                 let comparisonResult;
-                const isFallback = pdfStampImage.src && pdfStampImage.src.startsWith('data:image/png;base64') &&
-                    document.getElementById('canvasPdf').toDataURL() === pdfStampImage.src;
-                if (isFallback) {
-                    comparisonResult = {
-                        overallScore: 0.75,
-                        correlation: 0.75,
-                        structuralSimilarity: 0.75,
-                        featureMatches: 25,
-                        isMatch: true,
-                        isFallback: true,
-                        message: 'Comparison performed using fallback method due to PDF fetch error'
-                    };
-                } else if (!isOpenCVReady) {
+                if (!isOpenCVReady) {
                     comparisonResult = await performBasicComparison(uploadedImage, pdfStampImage);
                 } else {
                     comparisonResult = await compareStampImages(uploadedImage, pdfStampImage);
@@ -631,15 +653,39 @@
             }
         });
 
-        // ==== IMAGE/COMPARISON UTILITIES ====    
+        // ==== IMAGE UTILITIES ====    
+
+        // FIX 9: revoke the temporary blob URL once the image is decoded.
         async function loadImage(file) {
             return new Promise((resolve, reject) => {
                 const img = new Image();
-                img.onload = () => resolve(img);
-                img.onerror = () => reject(new Error('Failed to load image'));
-                img.src = URL.createObjectURL(file);
+                const objectUrl = URL.createObjectURL(file);
+                img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+                img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Failed to load image')); };
+                img.src = objectUrl;
             });
         }
+
+        // FIX 3: silently accept PDFs on the "Your Image" side by rendering page 1.
+        async function loadComparisonImage(file) {
+            if (file.type !== 'application/pdf') return loadImage(file);
+
+            const buf = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+            const page = await pdf.getPage(1);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const c = document.createElement('canvas');
+            c.width = viewport.width;
+            c.height = viewport.height;
+            await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
+            return new Promise((res, rej) => {
+                const i = new Image();
+                i.onload = () => res(i);
+                i.onerror = () => rej(new Error('Failed to render PDF page'));
+                i.src = c.toDataURL('image/png');
+            });
+        }
+
         function drawImageToCanvas(canvas, image) {
             const maxSize = 400;
             let { width, height } = image;
@@ -801,24 +847,20 @@
         // ==== ADVANCED IMAGE COMPARISON (OpenCV) ====    
         async function compareStampImages(uploadedImg, pdfImg) {
             try {
-                // Read canvases as Mats    
                 const uploadedMat = cv.imread(document.getElementById('canvasUp'));
                 const pdfMat = cv.imread(document.getElementById('canvasPdf'));
 
-                // Resize both images to the same size    
                 const size = new cv.Size(300, 300);
                 const resizedUploaded = new cv.Mat();
                 const resizedPDF = new cv.Mat();
                 cv.resize(uploadedMat, resizedUploaded, size);
                 cv.resize(pdfMat, resizedPDF, size);
 
-                // Convert to grayscale    
                 const grayUploaded = new cv.Mat();
                 const grayPDF = new cv.Mat();
                 cv.cvtColor(resizedUploaded, grayUploaded, cv.COLOR_RGBA2GRAY);
                 cv.cvtColor(resizedPDF, grayPDF, cv.COLOR_RGBA2GRAY);
 
-                // Prepare MatVectors and IntVector for calcHist    
                 const grayUploadedVec = new cv.MatVector();
                 grayUploadedVec.push_back(grayUploaded);
                 const grayPDFVec = new cv.MatVector();
@@ -826,29 +868,24 @@
                 const channels = new cv.IntVector();
                 channels.push_back(0);
 
-                // Prepare histSize and ranges as plain arrays    
                 const histSize = [256];
                 const ranges = [0, 256];
 
-                // Calculate histograms    
-                const mask = new cv.Mat(); // no mask    
+                const mask = new cv.Mat();
                 const histUploaded = new cv.Mat();
                 const histPDF = new cv.Mat();
 
                 cv.calcHist(grayUploadedVec, channels, mask, histUploaded, histSize, ranges);
                 cv.calcHist(grayPDFVec, channels, mask, histPDF, histSize, ranges);
 
-                // Compare histograms using correlation    
                 const correlation = cv.compareHist(histUploaded, histPDF, cv.HISTCMP_CORREL);
 
-                // Calculate structural similarity (simplified SSIM)    
                 const diff = new cv.Mat();
                 cv.absdiff(grayUploaded, grayPDF, diff);
                 const meanDiff = cv.mean(diff)[0];
                 const maxDiff = 255;
                 const structuralSimilarity = 1 - (meanDiff / maxDiff);
 
-                // Feature matching using ORB    
                 const orb = new cv.ORB();
                 const kp1 = new cv.KeyPointVector();
                 const kp2 = new cv.KeyPointVector();
@@ -867,7 +904,6 @@
                     bf.delete();
                 }
 
-                // Cleanup all OpenCV objects    
                 uploadedMat.delete();
                 pdfMat.delete();
                 resizedUploaded.delete();
@@ -887,11 +923,10 @@
                 des1.delete();
                 des2.delete();
 
-                // Calculate overall similarity score    
                 const histogramWeight = 0.4;
                 const structuralWeight = 0.4;
                 const featureWeight = 0.2;
-                const normalizedFeatureScore = Math.min(featureMatches / 50, 1); // Normalize feature matches    
+                const normalizedFeatureScore = Math.min(featureMatches / 50, 1);
 
                 const overallScore = (
                     correlation * histogramWeight +
@@ -931,6 +966,7 @@
             } else if (result.isBasic) {
                 additionalInfo = `<div style="color: #2196F3; margin-top: 10px; font-size: 0.85em;">ℹ️ ${result.message}</div>`;
             }
+            // FIX 10: add an explicit disclaimer so the numeric score is not treated as proof.
             document.getElementById('score').innerHTML = `    
                 <div style="font-weight: bold; margin-bottom: 5px; color: ${matchColor}; font-size: 1.3em;">    
                     ${matchIcon} ${matchStatus} (${scorePercentage}%)    
@@ -943,6 +979,9 @@
                     ${result.error ? `<div style="color: #ff9800; margin-top: 10px;">⚠️ ${result.error}</div>` : ''}    
                 </div>    
                 ${additionalInfo}    
+                <div style="font-size: 0.78em; opacity: 0.85; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.35); font-style: italic;">    
+                    ℹ️ Visual similarity score only — not proof of authenticity.    
+                </div>    
             `;
         }
 
@@ -978,6 +1017,5 @@
         }    
     </script>
 </body>
-v1
 
 </html>

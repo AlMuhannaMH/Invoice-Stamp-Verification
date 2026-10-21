@@ -1,18 +1,61 @@
+// netlify/functions/fetch-pdf.js
 const https = require('https');
 
 const PDF_HOST = 'arlasfatest.danyaltd.com';
 const PDF_PORT = 14443;
 const ID_PATTERN = /^966\d{5}$/;
 
-function json(statusCode, payload) {
+// FIX 4 — must finish inside Netlify's default 10 s function limit.
+// (Raise this only if you upgrade the Netlify plan to a 26 s timeout.)
+const UPSTREAM_TIMEOUT_MS = 8000;
+
+// FIX 2 — CORS allowlist. Replace these placeholders with your real URLs.
+// - If you deploy to a custom domain, replace yourdomain.com
+// - If your site name is not "your-site-name", replace both places.
+// - Localhost entries are for `netlify dev` testing.
+const ALLOWED_ORIGINS = [
+  'http://localhost:8888',
+  'http://localhost:3000',
+  'https://invoice-stamp-verification.netlify.app',
+//  'https://yourdomain.com',
+//  'https://www.yourdomain.com',
+];
+
+// Netlify auto-generated deploy-preview and branch-deploy URLs.
+// The <site-name> segment must match the name you use in Netlify.
+const ALLOWED_ORIGIN_PATTERNS = [
+  /^https:\/\/deploy-preview-\d+--invoice-stamp-verification\.netlify\.app$/,
+  /^https:\/\/[a-z0-9-]+--invoice-stamp-verification\.netlify\.app$/,
+];
+
+function resolveCorsOrigin(event) {
+  const origin =
+    (event.headers && (event.headers.origin || event.headers.Origin)) || '';
+  if (!origin) return '';                                  // same-origin: no header needed
+  if (ALLOWED_ORIGINS.includes(origin)) return origin;
+  if (ALLOWED_ORIGIN_PATTERNS.some(re => re.test(origin))) return origin;
+  return '';                                               // not allowed: browser blocks the response
+}
+
+function corsHeaders(event) {
+  const origin = resolveCorsOrigin(event);
+  if (!origin) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Vary': 'Origin',
+  };
+}
+
+function json(event, statusCode, payload, extraHeaders = {}) {
   return {
     statusCode,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-store'
+      'Cache-Control': 'no-store',
+      ...corsHeaders(event),
+      ...extraHeaders,
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   };
 }
 
@@ -24,11 +67,11 @@ function downloadPdf(customerCode) {
       port: PDF_PORT,
       path,
       method: 'GET',
-      timeout: 20000,
+      timeout: UPSTREAM_TIMEOUT_MS,
       headers: {
         'Accept': 'application/pdf',
-        'User-Agent': 'Arla-Invoice-Stamp-Checker/4.0'
-      }
+        'User-Agent': 'Arla-Invoice-Stamp-Checker/4.0',
+      },
     }, response => {
       const chunks = [];
       response.on('data', chunk => chunks.push(chunk));
@@ -60,21 +103,24 @@ exports.handler = async event => {
     return {
       statusCode: 204,
       headers: {
-        'Access-Control-Allow-Origin': '*',
+        ...corsHeaders(event),
         'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Max-Age': '86400',
       },
-      body: ''
+      body: '',
     };
   }
 
   if (event.httpMethod !== 'GET') {
-    return json(405, { message: 'Method not allowed' });
+    return json(event, 405, { message: 'Method not allowed' });
   }
 
   const customerCode = String(event.queryStringParameters?.id || '').trim();
   if (!ID_PATTERN.test(customerCode)) {
-    return json(400, { message: 'A valid 8-digit customer code starting with 966 is required.' });
+    return json(event, 400, {
+      message: 'A valid 8-digit customer code starting with 966 is required.',
+    });
   }
 
   try {
@@ -85,16 +131,17 @@ exports.handler = async event => {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${customerCode}.pdf"`,
-        'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=300'
+        // FIX 8 — never let shared caches hold a personal signature PDF.
+        'Cache-Control': 'private, max-age=60',
+        ...corsHeaders(event),
       },
-      body: pdf.toString('base64')
+      body: pdf.toString('base64'),
     };
   } catch (error) {
     console.error('fetch-pdf failed', { customerCode, message: error.message });
-    return json(502, {
+    return json(event, 502, {
       message: `Unable to retrieve the reference PDF for customer ${customerCode}.`,
-      detail: error.message
+      detail: error.message,
     });
   }
 };
