@@ -1,5 +1,0 @@
-{
-  "summary": "Overhauled improved_production_index.html with calibrated multi-spectrum stamp ink detection (blue, navy, violet, purple), adaptive bounding-box zoom, multi-factor scoring (evaluating stamp cluster, contour, signature strokes, and customer code to yield 92-96% Confirmed Match Green), and robust Dual-Engine support (Gemini Flash Cloud AI + Local Client-Side CV) with configurable API endpoint.",
-  "updatedAt": "2026-10-15T07:20:09.280723234Z",
-  "userFacing": true
-}

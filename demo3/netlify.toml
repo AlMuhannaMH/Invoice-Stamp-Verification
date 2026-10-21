@@ -1,3 +1,0 @@
-[build]    
-  publish   = "."           # everything under demo2/ is your site    
-  functions = "functions"   # where fetch-pdf.js lives
